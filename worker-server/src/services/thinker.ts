@@ -1,5 +1,5 @@
 // ─── Thinker Service (Worker Server) ────────────
-// Heavy reasoning agent with llama-3.3-70b-versatile.
+// Research agent using 8B model with key rotation.
 // Tools: deep_web_scraper, deep_memory_search.
 // Called by the Manager's ask_worker_server tool.
 
@@ -14,13 +14,17 @@ import {
 } from "@langchain/classic/agents";
 import { createDeepWebScraper } from "../tools/deepWebScraper.js";
 import { createDeepMemoryTool } from "../tools/deepMemoryTool.js";
+import { getNextKey } from "../utils/keyRotator.js";
 
-const thinkerLLM = new ChatGroq({
-  model: "llama-3.3-70b-versatile",
-  apiKey: process.env.GROQ_API_KEY,
-  temperature: 0.3,
-  maxTokens: 4096,
-});
+// Create fresh 8B LLM with rotated key each call
+function createThinkerLLM(): ChatGroq {
+  return new ChatGroq({
+    model: "llama-3.1-8b-instant",
+    apiKey: getNextKey(),
+    temperature: 0.3,
+    maxTokens: 2048,
+  });
+}
 
 function getThinkerPrompt() {
   const today = new Date().toLocaleDateString("en-US", {
@@ -79,7 +83,7 @@ export async function runThinker(
     new MessagesPlaceholder("agent_scratchpad"),
   ]);
 
-  const agent = createToolCallingAgent({ llm: thinkerLLM, tools, prompt });
+  const agent = createToolCallingAgent({ llm: createThinkerLLM(), tools, prompt });
 
   const executor = new AgentExecutor({
     agent,

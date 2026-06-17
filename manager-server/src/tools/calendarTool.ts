@@ -7,9 +7,9 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
   new DynamicStructuredTool({
     name: "google_calendar",
     description: `Manage the user's Google Calendar. You can:
-- "list": View upcoming events (optionally filter by query).
+- "list": View events (filter by query text and/or date range with timeMin/timeMax).
 - "create": Schedule a new event (needs summary, startDateTime, endDateTime).
-- "delete": Delete events matching a search query (e.g., delete all "MERN" events).
+- "delete": Delete events matching a search query.
 - "update": Update an existing event's title or time.`,
     schema: z.object({
       action: z.enum(["list", "create", "delete", "update"]).describe("The action to perform"),
@@ -18,27 +18,39 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
       endDateTime: z.string().optional().describe("ISO end datetime (for create/update)"),
       query: z.string().optional().describe("Search query (for list/delete — matches event titles)"),
       eventId: z.string().optional().describe("Specific event ID (for delete/update a single event)"),
+      timeMin: z.string().optional().describe("ISO datetime — show events starting from this time (for list)"),
+      timeMax: z.string().optional().describe("ISO datetime — show events up to this time (for list)"),
     }),
-    func: async ({ action, summary, startDateTime, endDateTime, query, eventId }) => {
+    func: async ({ action, summary, startDateTime, endDateTime, query, eventId, timeMin, timeMax }) => {
       if (!authClient) return "Error: Google Calendar not connected. Please sign in with Google first.";
       const calendar = google.calendar({ version: "v3", auth: authClient });
 
       try {
         // ── LIST ─────────────────────────────────
         if (action === "list") {
-          const res = await calendar.events.list({
+          const listParams: any = {
             calendarId: "primary",
-            timeMin: new Date().toISOString(),
+            timeMin: timeMin || new Date().toISOString(),
             maxResults: 15,
             singleEvents: true,
             orderBy: "startTime",
-            q: query,
-          });
+          };
+          if (timeMax) listParams.timeMax = timeMax;
+          if (query) listParams.q = query;
+
+          const res = await calendar.events.list(listParams);
           const events = res.data.items || [];
-          if (!events.length) return query ? `No events found matching "${query}".` : "No upcoming events found.";
-          return `📅 ${events.length} upcoming events:\n${events.map(e =>
-            `  • [${e.id}] ${new Date(e.start?.dateTime || e.start?.date || "").toLocaleString()} — ${e.summary}`
-          ).join("\n")}`;
+          if (!events.length) {
+            if (query) return `No events found matching "${query}".`;
+            if (timeMax) return `No events found in this date range.`;
+            return "No upcoming events found.";
+          }
+          return `📅 ${events.length} event(s):\n${events.map(e => {
+            const dt = new Date(e.start?.dateTime || e.start?.date || "");
+            const dateStr = dt.toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" });
+            const timeStr = e.start?.dateTime ? dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : "All day";
+            return `  • ${dateStr}, ${timeStr} — ${e.summary}`;
+          }).join("\n")}`;
         }
 
         // ── CREATE ───────────────────────────────
@@ -48,8 +60,8 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
             calendarId: "primary",
             requestBody: {
               summary,
-              start: { dateTime: startDateTime },
-              end: { dateTime: endDateTime },
+              start: { dateTime: startDateTime, timeZone: "Asia/Kolkata" },
+              end: { dateTime: endDateTime, timeZone: "Asia/Kolkata" },
             },
           });
           return `✅ Event scheduled: "${summary}". Link: ${res.data.htmlLink}`;
@@ -57,18 +69,16 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
 
         // ── DELETE ───────────────────────────────
         if (action === "delete") {
-          // Delete by specific event ID
           if (eventId) {
             await calendar.events.delete({ calendarId: "primary", eventId });
             return `🗑️ Event deleted (ID: ${eventId}).`;
           }
 
-          // Delete by search query (find matching events, delete all)
           if (query) {
             const res = await calendar.events.list({
               calendarId: "primary",
-              timeMin: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // include today & yesterday
-              maxResults: 20,
+              timeMin: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+              maxResults: 50,
               singleEvents: true,
               q: query,
             });
@@ -95,8 +105,8 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
           if (!eventId) return "Error: eventId is required to update an event. Use 'list' first to find the event ID.";
           const patch: any = {};
           if (summary) patch.summary = summary;
-          if (startDateTime) patch.start = { dateTime: startDateTime };
-          if (endDateTime) patch.end = { dateTime: endDateTime };
+          if (startDateTime) patch.start = { dateTime: startDateTime, timeZone: "Asia/Kolkata" };
+          if (endDateTime) patch.end = { dateTime: endDateTime, timeZone: "Asia/Kolkata" };
 
           if (Object.keys(patch).length === 0) return "Error: Provide at least one field to update (summary, startDateTime, or endDateTime).";
 

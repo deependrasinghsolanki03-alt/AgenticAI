@@ -8,6 +8,7 @@ import { handleEmbed } from "./controllers/embedController.js";
 import { loadChats, saveChat, clearChats } from "./controllers/chatHistoryController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
+import { initKeyRotator } from "./utils/keyRotator.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
@@ -56,6 +57,7 @@ app.use((req, res) => res.status(404).json({ error: `${req.method} ${req.origina
 
 async function boot() {
   try {
+    initKeyRotator();
     await initEmbeddingModel();
     app.listen(PORT, () => {
       console.log(`\n🚀 AgenticAI Manager v2 is live on http://localhost:${PORT}`);
