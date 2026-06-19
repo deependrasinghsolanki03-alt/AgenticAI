@@ -27,3 +27,7 @@ npm-debug.log*
 
 # Archive (old backend)
 _backend_v1_archive/
+
+# Raw assets & utility scripts
+png/
+remove_bg.py

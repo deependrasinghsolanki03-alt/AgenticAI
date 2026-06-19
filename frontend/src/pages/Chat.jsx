@@ -259,7 +259,10 @@ export default function Chat() {
               </defs>
             </svg>
           </div>
-          <span>AgenticAI</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.938rem' }}>AgenticAI</div>
+            <div style={{ fontSize: '0.688rem', color: '#8b8fad', fontWeight: 400 }}>AI Digital Soul</div>
+          </div>
         </div>
 
         <button className="new-chat-btn" onClick={() => setMessages([{
@@ -268,10 +271,10 @@ export default function Chat() {
           content: 'Starting a new conversation. How can I help?',
           timestamp: new Date(),
         }])}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
-          New Chat
+          + NEW CHAT
         </button>
 
         <div className="sidebar-spacer" />
