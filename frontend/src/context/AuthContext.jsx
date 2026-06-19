@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -26,7 +28,7 @@ export function AuthProvider({ children }) {
         session?.provider_refresh_token &&
         session?.access_token
       ) {
-        fetch('http://localhost:5000/api/auth/save-tokens', {
+        fetch(`${API_URL}/api/auth/save-tokens`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

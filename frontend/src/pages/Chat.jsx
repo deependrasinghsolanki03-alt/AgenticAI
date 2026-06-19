@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import MinionCharacter from '../components/MinionCharacter';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 export default function Chat() {
   const { user, signOut } = useAuth();
   const [messages, setMessages] = useState([]);
@@ -31,7 +33,7 @@ export default function Chat() {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await fetch('http://localhost:5000/api/chats', {
+        const res = await fetch(`${API_URL}/api/chats`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -69,7 +71,7 @@ export default function Chat() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) return;
-      await fetch('http://localhost:5000/api/chats/save', {
+      await fetch(`${API_URL}/api/chats/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ role, content }),
@@ -115,7 +117,7 @@ export default function Chat() {
         headers['X-Google-Token'] = providerToken;
       }
 
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ message: trimmed }),

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: agenticai-manager
+    runtime: node
+    plan: free
+    buildCommand: cd manager-server && npm install && npm run build
+    startCommand: cd manager-server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+
+  - type: web
+    name: agenticai-worker
+    runtime: node
+    plan: free
+    buildCommand: cd worker-server && npm install && npm run build
+    startCommand: cd worker-server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5001"

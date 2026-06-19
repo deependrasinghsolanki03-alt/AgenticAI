@@ -13,7 +13,13 @@ import { initKeyRotator } from "./utils/keyRotator.js";
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:3000"], credentials: true }));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.FRONTEND_URL,
+].filter(Boolean) as string[];
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use((req, res, next) => {
   const start = Date.now();
