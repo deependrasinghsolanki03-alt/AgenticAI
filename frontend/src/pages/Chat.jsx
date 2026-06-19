@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import MinionCharacter from '../components/MinionCharacter';
 
 export default function Chat() {
   const { user, signOut } = useAuth();
@@ -357,42 +358,11 @@ export default function Chat() {
             </div>
           ))}
 
-          {/* Loading indicator */}
+          {/* Minion Loading Character */}
           {isLoading && (
             <div className="message message-assistant">
-              <div className="message-avatar assistant-avatar">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M12 2L20 7V17L12 22L4 17V7L12 2Z"
-                    fill="currentColor"
-                    opacity="0.8"
-                  />
-                </svg>
-              </div>
-              <div className="message-body">
-                <div className="message-content loading-content">
-                  <div className="agent-status">
-                    {agentStatus.startsWith('Running Tool:') ? (
-                      <>
-                        <span className="tool-icon">
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <path d="M8.167 1.75L12.25 5.833L5.833 12.25H1.75V8.167L8.167 1.75Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </span>
-                        <span>{agentStatus}</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="thinking-dots">
-                          <span />
-                          <span />
-                          <span />
-                        </div>
-                        <span>{agentStatus}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+              <div className="message-body" style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+                <MinionCharacter status={agentStatus} isActive={isLoading} />
               </div>
             </div>
           )}

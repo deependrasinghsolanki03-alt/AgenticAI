@@ -890,3 +890,106 @@ button {
     max-width: 100%;
   }
 }
+
+/* ── Minion Character ────────────────────────── */
+.minion-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  transition: all 0.3s ease;
+}
+
+.minion-video-wrapper {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: visible;
+  position: relative;
+  transition: opacity 0.2s ease, transform 0.3s ease;
+}
+
+.minion-video-wrapper.minion-fading {
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+.minion-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+  background: transparent;
+}
+
+.minion-active .minion-video-wrapper {
+  animation: minion-float 3s ease-in-out infinite;
+}
+
+.minion-active .minion-video-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 8px;
+  background: radial-gradient(ellipse, rgba(99, 102, 241, 0.25), transparent);
+  border-radius: 50%;
+  animation: minion-shadow 3s ease-in-out infinite;
+}
+
+@keyframes minion-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes minion-shadow {
+  0%, 100% { transform: translateX(-50%) scaleX(1); opacity: 0.6; }
+  50% { transform: translateX(-50%) scaleX(0.8); opacity: 0.3; }
+}
+
+.minion-status-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  background: var(--surface-glass);
+  border: 1px solid var(--surface-glass-border);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+.minion-status-text {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent-primary);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.15); }
+  50% { box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.1); }
+}
+
+/* Idle state — smaller, subtle */
+.minion-idle .minion-video-wrapper {
+  width: 80px;
+  height: 80px;
+}
+
+@media (max-width: 768px) {
+  .minion-video-wrapper {
+    width: 90px;
+    height: 90px;
+  }
+  .minion-idle .minion-video-wrapper {
+    width: 60px;
+    height: 60px;
+  }
+}
