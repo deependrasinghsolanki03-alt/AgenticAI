@@ -82,7 +82,7 @@ KEYWORD RULES (IMPORTANT):
 - "events delete/hatao/remove karo" = ALWAYS scheduler (Google Calendar), NOT a coding question
 - "events dikhao/list/show" = ALWAYS scheduler
 - "calendar mein add karo" = ALWAYS scheduler
-- "email bhejo/search karo" = ALWAYS emailer
+- "email bhejo/send/write/likh/compose karo" = ALWAYS emailer
 - "topics/concepts/course/padhai" + "nikalo/batao" = researcher
 - Only use "direct" for simple greetings, math, or general chat with NO tools
 
@@ -310,7 +310,7 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         params.onStatus?.(`Email: ${task.instruction.substring(0, 50)}...`);
         const gmailTool = createGmailTool(params.googleAuthClient);
         const instrLower = task.instruction.toLowerCase();
-        const isSend = instrLower.includes("send") || instrLower.includes("bhejo");
+        const isSend = instrLower.includes("send") || instrLower.includes("bhejo") || instrLower.includes("write") || instrLower.includes("compose") || instrLower.includes("likh") || instrLower.includes("draft");
 
         if (isSend) {
           const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage);

@@ -69,40 +69,12 @@ cd worker-server && npm install && cd ..
 
 ### 2. Environment Variables
 
-Create `.env` files in each server directory:
+Copy the `.env.example` file in each server directory to `.env` and fill in your credentials:
 
-**`manager-server/.env`**
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-PINECONE_API_KEY=your_pinecone_key
-PINECONE_INDEX_NAME=agent-memory
-GROQ_API_KEY=your_groq_key
-GROQ_API_KEY_2=your_groq_key_2
-GROQ_API_KEY_3=your_groq_key_3
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-WORKER_URL=http://localhost:5001
-INTERNAL_SECRET=your_internal_secret
-PORT=5000
-```
-
-**`worker-server/.env`**
-```env
-GROQ_API_KEY=your_groq_key
-GROQ_API_KEY_2=your_groq_key_2
-GROQ_API_KEY_3=your_groq_key_3
-PINECONE_API_KEY=your_pinecone_key
-PINECONE_INDEX_NAME=agent-memory
-MANAGER_URL=http://localhost:5000
-INTERNAL_SECRET=your_internal_secret
-PORT=5001
-```
-
-**`frontend/.env`**
-```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```bash
+cp manager-server/.env.example manager-server/.env
+cp worker-server/.env.example worker-server/.env
+cp frontend/.env.example frontend/.env
 ```
 
 ### 3. Run All 3 Servers
@@ -110,17 +82,15 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 Open 3 terminals and run:
 
 ```bash
-# Terminal 1 — Manager Server (Port 5000)
+# Terminal 1 — Manager Server
 cd manager-server && npm run dev
 
-# Terminal 2 — Worker Server (Port 5001)
+# Terminal 2 — Worker Server
 cd worker-server && npm run dev
 
-# Terminal 3 — Frontend (Port 5173)
+# Terminal 3 — Frontend
 cd frontend && npm run dev
 ```
-
-Open `http://localhost:5173` in your browser.
 
 ---
 

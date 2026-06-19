@@ -79,8 +79,15 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('SignOut error (forcing clear):', err);
+    }
+    // Force clear even if signOut fails
+    setSession(null);
+    localStorage.clear();
+    window.location.href = '/';
   };
 
   const value = {
