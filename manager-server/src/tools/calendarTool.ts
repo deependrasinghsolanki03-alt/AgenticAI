@@ -23,7 +23,7 @@ export const createCalendarTool = (authClient?: OAuth2Client | null) =>
     }),
     func: async ({ action, summary, startDateTime, endDateTime, query, eventId, timeMin, timeMax }) => {
       if (!authClient) return "Error: Google Calendar not connected. Please sign in with Google first.";
-      const calendar = google.calendar({ version: "v3", auth: authClient });
+      const calendar = google.calendar({ version: "v3", auth: authClient as any });
 
       try {
         // ── LIST ─────────────────────────────────

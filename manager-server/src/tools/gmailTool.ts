@@ -14,7 +14,7 @@ export const createGmailTool = (authClient?: OAuth2Client | null) =>
     }),
     func: async ({ action, query, to, subject, body }) => {
       if (!authClient) return "Error: Gmail not connected. Please sign in with Google.";
-      const gmail = google.gmail({ version: "v1", auth: authClient });
+      const gmail = google.gmail({ version: "v1", auth: authClient as any });
       try {
         if (action === "search") {
           const res = await gmail.users.messages.list({ userId: "me", q: query || "is:unread", maxResults: 5 });
