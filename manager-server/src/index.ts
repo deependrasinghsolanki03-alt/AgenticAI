@@ -5,7 +5,7 @@ import cors from "cors";
 import { verifyAuth } from "./middleware/auth.js";
 import { handleChat } from "./controllers/chatController.js";
 import { handleEmbed } from "./controllers/embedController.js";
-import { loadChats, saveChat, clearChats } from "./controllers/chatHistoryController.js";
+import { loadChats, saveChat, clearChats, listSessions, createSession, updateSession, deleteSession } from "./controllers/chatHistoryController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
@@ -45,6 +45,12 @@ app.post("/api/chat", verifyAuth, handleChat);
 
 // Internal Embed API (for Worker Server)
 app.post("/api/embed", handleEmbed);
+
+// Sessions
+app.get("/api/sessions", verifyAuth, listSessions);
+app.post("/api/sessions", verifyAuth, createSession);
+app.patch("/api/sessions/:id", verifyAuth, updateSession);
+app.delete("/api/sessions/:id", verifyAuth, deleteSession);
 
 // Chat History
 app.get("/api/chats", verifyAuth, loadChats);

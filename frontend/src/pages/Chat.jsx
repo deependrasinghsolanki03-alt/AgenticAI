@@ -11,7 +11,9 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState('');
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -25,57 +27,153 @@ export default function Chat() {
     inputRef.current?.focus();
   }, []);
 
-  // Load chat history from Supabase on mount
+  // Helper: get auth token
+  const getToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  };
+
+  // Load sessions on mount
   useEffect(() => {
-    if (!user || historyLoaded) return;
-    const loadHistory = async () => {
+    if (!user || sessionsLoaded) return;
+    const loadSessions = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
+        const token = await getToken();
         if (!token) return;
-        const res = await fetch(`${API_URL}/api/chats`, {
+        const res = await fetch(`${API_URL}/api/sessions`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
-          const { messages: history } = await res.json();
-          if (history && history.length > 0) {
-            const loaded = history.map((m) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              timestamp: new Date(m.created_at),
-            }));
-            setMessages(loaded);
+          const { sessions: loadedSessions } = await res.json();
+          setSessions(loadedSessions || []);
+          // Auto-select the most recent session
+          if (loadedSessions && loadedSessions.length > 0) {
+            const latestSession = loadedSessions[0];
+            setActiveSessionId(latestSession.id);
+            await loadSessionMessages(latestSession.id, token);
           } else {
-            // No history — show welcome message
-            setMessages([{
-              id: 'welcome',
-              role: 'assistant',
-              content: 'Hello! I\'m your AI assistant. How can I help you today?',
-              timestamp: new Date(),
-            }]);
+            // No sessions — create first one
+            await createNewSession();
           }
         }
       } catch (err) {
-        console.error('Failed to load chat history:', err);
+        console.error('Failed to load sessions:', err);
       } finally {
-        setHistoryLoaded(true);
+        setSessionsLoaded(true);
       }
     };
-    loadHistory();
-  }, [user, historyLoaded]);
+    loadSessions();
+  }, [user, sessionsLoaded]);
 
-  // Helper: save a message to Supabase (fire-and-forget)
+  // Load messages for a session
+  const loadSessionMessages = async (sessionId, tokenOverride) => {
+    try {
+      const token = tokenOverride || await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/chats?session_id=${sessionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { messages: history } = await res.json();
+        if (history && history.length > 0) {
+          const loaded = history.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: new Date(m.created_at),
+          }));
+          setMessages(loaded);
+        } else {
+          setMessages([{
+            id: 'welcome',
+            role: 'assistant',
+            content: 'Hello! I\'m your AI assistant. How can I help you today?',
+            timestamp: new Date(),
+          }]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load session messages:', err);
+    }
+  };
+
+  // Switch to a session
+  const switchSession = async (sessionId) => {
+    if (sessionId === activeSessionId) return;
+    setActiveSessionId(sessionId);
+    setMessages([]);
+    await loadSessionMessages(sessionId);
+    inputRef.current?.focus();
+  };
+
+  // Create a new session
+  const createNewSession = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: 'New Chat' }),
+      });
+      if (res.ok) {
+        const { session } = await res.json();
+        setSessions((prev) => [session, ...prev]);
+        setActiveSessionId(session.id);
+        setMessages([{
+          id: 'welcome',
+          role: 'assistant',
+          content: 'Starting a new conversation. How can I help?',
+          timestamp: new Date(),
+        }]);
+        inputRef.current?.focus();
+      }
+    } catch (err) {
+      console.error('Failed to create session:', err);
+    }
+  };
+
+  // Delete a session
+  const deleteSessionById = async (e, sessionId) => {
+    e.stopPropagation();
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (activeSessionId === sessionId) {
+        const remaining = sessions.filter((s) => s.id !== sessionId);
+        if (remaining.length > 0) {
+          switchSession(remaining[0].id);
+        } else {
+          createNewSession();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+    }
+  };
+
+  // Save message to DB
   const saveMessageToDB = async (role, content) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      const token = await getToken();
       if (!token) return;
       await fetch(`${API_URL}/api/chats/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role, content }),
+        body: JSON.stringify({ role, content, session_id: activeSessionId }),
       });
+      // If it's a user message, update session title in sidebar
+      if (role === 'user') {
+        const title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+        setSessions((prev) =>
+          prev.map((s) => s.id === activeSessionId ? { ...s, title, updated_at: new Date().toISOString() } : s)
+        );
+      }
     } catch (err) {
       console.error('Failed to save message:', err);
     }
@@ -84,6 +182,11 @@ export default function Chat() {
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
+
+    // If no active session, create one first
+    if (!activeSessionId) {
+      await createNewSession();
+    }
 
     const userMessage = {
       id: crypto.randomUUID(),
@@ -99,11 +202,7 @@ export default function Chat() {
     setAgentStatus('Thinking...');
 
     try {
-      // Get the current JWT token
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       const providerToken = session?.provider_token;
       if (!token) throw new Error('No valid session. Please sign in again.');
@@ -139,16 +238,13 @@ export default function Chat() {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE events are separated by double newlines
         const parts = buffer.split('\n\n');
-        // Keep the last (possibly incomplete) chunk in the buffer
         buffer = parts.pop() || '';
 
         for (const part of parts) {
           const trimmedPart = part.trim();
           if (!trimmedPart) continue;
 
-          // Parse event type and data from SSE lines
           let eventType = 'message';
           let dataStr = '';
 
@@ -166,19 +262,11 @@ export default function Chat() {
           try {
             payload = JSON.parse(dataStr);
           } catch {
-            continue; // skip malformed JSON
+            continue;
           }
 
-          // Handle each SSE event type
           if (eventType === 'status') {
-            const stage = payload.stage || '';
-            const detail = payload.detail || 'Processing...';
-            // Show stage-specific icons via status prefix
-            if (stage === 'memory' || stage === 'planning' || stage === 'researching') {
-              setAgentStatus(detail);
-            } else {
-              setAgentStatus(detail);
-            }
+            setAgentStatus(payload.detail || 'Processing...');
           } else if (eventType === 'tool') {
             setAgentStatus(`Running Tool: ${payload.name || 'unknown'}`);
           } else if (eventType === 'done') {
@@ -236,6 +324,21 @@ export default function Chat() {
     });
   };
 
+  const formatSessionDate = (dateStr) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="chat-layout">
       {/* Sidebar */}
@@ -267,17 +370,42 @@ export default function Chat() {
           </div>
         </div>
 
-        <button className="new-chat-btn" onClick={() => setMessages([{
-          id: 'welcome',
-          role: 'assistant',
-          content: 'Starting a new conversation. How can I help?',
-          timestamp: new Date(),
-        }])}>
+        <button className="new-chat-btn" onClick={createNewSession}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
           + NEW CHAT
         </button>
+
+        {/* Chat Session History */}
+        <div className="session-list">
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className={`session-item ${session.id === activeSessionId ? 'session-active' : ''}`}
+              onClick={() => switchSession(session.id)}
+            >
+              <div className="session-item-content">
+                <svg className="session-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 3h12M2 7h8M2 11h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                <div className="session-text">
+                  <span className="session-title">{session.title || 'New Chat'}</span>
+                  <span className="session-time">{formatSessionDate(session.updated_at || session.created_at)}</span>
+                </div>
+              </div>
+              <button
+                className="session-delete-btn"
+                onClick={(e) => deleteSessionById(e, session.id)}
+                title="Delete chat"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
 
         <div className="sidebar-spacer" />
 

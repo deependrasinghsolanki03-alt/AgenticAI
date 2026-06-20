@@ -1,19 +1,106 @@
-// ─── Chat History Controller ────────────────────
-// Save and load chat messages from Supabase
+// ─── Chat History Controller (Multi-Session) ───
+// Manages chat sessions and messages like ChatGPT
 import { Request, Response } from "express";
 import { supabaseAdmin } from "../config/supabase.js";
 
-// GET /api/chats — Load chat history for the logged-in user
-export async function loadChats(req: Request, res: Response): Promise<void> {
+// GET /api/sessions — List all chat sessions for user
+export async function listSessions(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user_id!;
     const { data, error } = await supabaseAdmin
+      .from("chat_sessions")
+      .select("id, title, created_at, updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    res.json({ sessions: data || [] });
+  } catch (err: any) {
+    console.error("[Sessions] List error:", err.message);
+    res.status(500).json({ error: "Failed to load sessions." });
+  }
+}
+
+// POST /api/sessions — Create a new chat session
+export async function createSession(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user_id!;
+    const title = req.body.title || "New Chat";
+
+    const { data, error } = await supabaseAdmin
+      .from("chat_sessions")
+      .insert({ user_id: userId, title })
+      .select("id, title, created_at, updated_at")
+      .single();
+
+    if (error) throw error;
+    res.json({ session: data });
+  } catch (err: any) {
+    console.error("[Sessions] Create error:", err.message);
+    res.status(500).json({ error: "Failed to create session." });
+  }
+}
+
+// PATCH /api/sessions/:id — Update session title
+export async function updateSession(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user_id!;
+    const sessionId = req.params.id;
+    const { title } = req.body;
+
+    const { error } = await supabaseAdmin
+      .from("chat_sessions")
+      .update({ title, updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Sessions] Update error:", err.message);
+    res.status(500).json({ error: "Failed to update session." });
+  }
+}
+
+// DELETE /api/sessions/:id — Delete a chat session and its messages
+export async function deleteSession(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user_id!;
+    const sessionId = req.params.id;
+
+    const { error } = await supabaseAdmin
+      .from("chat_sessions")
+      .delete()
+      .eq("id", sessionId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Sessions] Delete error:", err.message);
+    res.status(500).json({ error: "Failed to delete session." });
+  }
+}
+
+// GET /api/chats?session_id=X — Load messages for a specific session
+export async function loadChats(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.user_id!;
+    const sessionId = req.query.session_id as string;
+
+    let query = supabaseAdmin
       .from("chat_messages")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: true })
       .limit(200);
 
+    if (sessionId) {
+      query = query.eq("session_id", sessionId);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json({ messages: data || [] });
   } catch (err: any) {
@@ -22,24 +109,44 @@ export async function loadChats(req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/chats/save — Save a single message (user or assistant)
+// POST /api/chats/save — Save a message (with session_id)
 export async function saveChat(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user_id!;
-    const { role, content } = req.body;
+    const { role, content, session_id } = req.body;
 
     if (!role || !content) {
       res.status(400).json({ error: "role and content are required." });
       return;
     }
 
+    const insertData: any = { user_id: userId, role, content };
+    if (session_id) insertData.session_id = session_id;
+
     const { data, error } = await supabaseAdmin
       .from("chat_messages")
-      .insert({ user_id: userId, role, content })
+      .insert(insertData)
       .select("id, created_at")
       .single();
 
     if (error) throw error;
+
+    // Auto-title: On first user message, update session title
+    if (role === "user" && session_id) {
+      const { data: msgCount } = await supabaseAdmin
+        .from("chat_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", session_id);
+
+      // If this is among the first messages, update title
+      const title = content.substring(0, 50) + (content.length > 50 ? "..." : "");
+      await supabaseAdmin
+        .from("chat_sessions")
+        .update({ title, updated_at: new Date().toISOString() })
+        .eq("id", session_id)
+        .eq("user_id", userId);
+    }
+
     res.json({ success: true, id: data.id, created_at: data.created_at });
   } catch (err: any) {
     console.error("[ChatHistory] Save error:", err.message);
@@ -47,7 +154,7 @@ export async function saveChat(req: Request, res: Response): Promise<void> {
   }
 }
 
-// DELETE /api/chats — Clear all chat history for the user
+// DELETE /api/chats — Clear all chat history for user
 export async function clearChats(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user_id!;
