@@ -251,9 +251,7 @@ async function executeGraph(tasks: TaskNode[], params: PlannerParams): Promise<T
         const dep = completed.get(depId);
         if (dep) depOutputs[depId] = dep.output;
       }
-
-      const result = await executeTask(task, depOutputs, params);
-      return result;
+      return await executeTask(task, depOutputs, params);
     });
 
     // Run all ready tasks in PARALLEL
@@ -278,15 +276,43 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
 
   try {
     switch (task.agent) {
-      // ── RESEARCHER: Calls Worker Server ──
+      // ── RESEARCHER: Calls Worker Server (with 8B fallback) ──
       case "researcher": {
         params.onStatus?.(`Researching: ${task.instruction.substring(0, 50)}...`);
-        const worker = createWorkerTool(params.userId, params.onStatus);
-        output = await worker.invoke({
-          task_description: `${task.instruction}\n\nBe CONCISE. Bullet points. Max 300 words. Specific names only.`,
-          project_context: params.context,
-        });
-        toolsUsed.push({ tool: "ask_worker_server", input: task.instruction });
+        
+        let researchOutput = "";
+        try {
+          const worker = createWorkerTool(params.userId, params.onStatus);
+          researchOutput = await worker.invoke({
+            task_description: `${task.instruction}\n\nBe CONCISE. Bullet points. Max 300 words. Specific names only.`,
+            project_context: params.context,
+          });
+          toolsUsed.push({ tool: "ask_worker_server", input: task.instruction });
+        } catch (workerErr: any) {
+          console.error(`[Executor] Worker failed: ${workerErr.message}. Using 8B fallback.`);
+        }
+
+        // Check if worker output is garbage/error
+        const isGarbage = !researchOutput || 
+          researchOutput.includes("Agent stopped due to max iterations") ||
+          researchOutput.includes("Error:") ||
+          researchOutput.includes("ECONNREFUSED") ||
+          researchOutput.length < 20;
+
+        if (isGarbage) {
+          console.log("[Executor] ⚠️ Worker output invalid. Falling back to 8B direct research.");
+          params.onStatus?.("Worker unavailable. Using direct research...");
+          const fallbackPrompt = ChatPromptTemplate.fromMessages([
+            ["system", `You are a knowledgeable AI assistant. Today: ${getToday()}. Provide SPECIFIC, ACCURATE information. Use bullet points. Be concise. Max 300 words. Give EXACT names, not generic placeholders.`],
+            ["human", "{input}"],
+          ]);
+          const fallbackLLM = create8B(1024);
+          const fallbackRes = await fallbackPrompt.pipe(fallbackLLM).invoke({ input: task.instruction });
+          researchOutput = typeof fallbackRes.content === "string" ? fallbackRes.content : JSON.stringify(fallbackRes.content);
+          toolsUsed.push({ tool: "direct_research_fallback", input: task.instruction });
+        }
+
+        output = researchOutput;
         break;
       }
 
@@ -295,31 +321,44 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         params.onStatus?.(`Calendar: ${task.instruction.substring(0, 50)}...`);
         const calTool = createCalendarTool(params.googleAuthClient);
 
-        // Determine action from instruction
         const instrLower = task.instruction.toLowerCase();
         const isCreate = instrLower.includes("create") || instrLower.includes("add") || instrLower.includes("schedule") || instrLower.includes("banao");
         const isDelete = instrLower.includes("delete") || instrLower.includes("remove") || instrLower.includes("hatao");
-        const isList = instrLower.includes("list") || instrLower.includes("show") || instrLower.includes("dikhao") || instrLower.includes("upcoming");
 
         if (isCreate) {
-          // Use Param Extractor to get exact event details
           const events = await extractCalendarParams(task.instruction, depOutputs, params.userMessage);
           const results: string[] = [];
+          const createdTitles = new Set<string>();
+          
           for (const evt of events) {
             if (!evt.summary || !evt.startDateTime || !evt.endDateTime) continue;
+            
+            // Skip events with error/garbage titles
+            const badTitles = ["agent stopped", "error", "max iterations", "econnrefused", "failed", "undefined", "null"];
+            if (badTitles.some(bad => evt.summary.toLowerCase().includes(bad))) {
+              console.log(`[Executor] 🚫 Skipping bad event title: "${evt.summary}"`);
+              continue;
+            }
+            
+            // Skip duplicates
+            if (createdTitles.has(evt.summary.toLowerCase())) {
+              console.log(`[Executor] 🔄 Skipping duplicate: "${evt.summary}"`);
+              continue;
+            }
+            createdTitles.add(evt.summary.toLowerCase());
+            
             console.log(`[Executor] 📅 Creating: "${evt.summary}" @ ${evt.startDateTime}`);
             const r = await calTool.invoke({ action: "create", summary: evt.summary, startDateTime: evt.startDateTime, endDateTime: evt.endDateTime });
             results.push(r);
             toolsUsed.push({ tool: "google_calendar", input: `create: ${evt.summary}` });
             await sleep(500);
           }
-          output = results.join("\n");
+          output = results.length > 0 ? results.join("\n") : "No valid events to create. Research may have failed.";
         } else if (isDelete) {
           const query = extractSearchQuery(task.instruction);
           output = await calTool.invoke({ action: "delete", query });
           toolsUsed.push({ tool: "google_calendar", input: `delete: ${query}` });
         } else {
-          // Default: list — with smart date detection
           const dateRange = detectDateRange(task.instruction, params.userMessage);
           const query = extractSearchQuery(task.instruction);
           output = await calTool.invoke({
