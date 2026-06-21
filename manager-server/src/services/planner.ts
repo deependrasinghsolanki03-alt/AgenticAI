@@ -63,12 +63,15 @@ const PLANNER_PROMPT = ChatPromptTemplate.fromMessages([
   ["system", `You are AgenticAI Planner. Today: {today}. Tomorrow: {tomorrow}.
 Your ONLY job: Create a task graph (JSON) for the user's request.
 
+RECENT CONVERSATION CONTEXT:
+{context}
+
 Available agents:
 - "researcher" — Search internet for topics, news, weather, coding info
 - "scheduler" — Google Calendar (create/list/delete events)
-- "emailer" — Send or search Gmail
-- "memory" — Recall past conversations from memory
-- "direct" — Simple chat, greetings, math, no tools needed
+- "emailer" — Send or search Gmail (ONLY when user EXPLICITLY asks to send/search email)
+- "memory" — Recall past conversations from memory (ONLY for searching/querying old memories)
+- "direct" — Simple chat, greetings, math, acknowledging info, answering questions using context
 
 Output a JSON object with "tasks" array. Each task:
 {{
@@ -78,18 +81,51 @@ Output a JSON object with "tasks" array. Each task:
   "depends_on": []
 }}
 
-KEYWORD RULES (IMPORTANT):
-- "events delete/hatao/remove karo" = ALWAYS scheduler (Google Calendar), NOT a coding question
-- "events dikhao/list/show" = ALWAYS scheduler
-- "calendar mein add karo" = ALWAYS scheduler
-- "email bhejo/send/write/likh/compose karo" = ALWAYS emailer
-- "topics/concepts/course/padhai" + "nikalo/batao" = researcher
-- Only use "direct" for simple greetings, math, or general chat with NO tools
+🚨 CRITICAL RULES — READ CAREFULLY:
+
+1. INFORMATION SHARING vs ACTION:
+   - When user TELLS you something ("my gf email is X", "mera naam Y hai", "remember this"), use "direct" — just acknowledge and confirm.
+   - "my email is X" / "meri gf ka email X hai" = user is SHARING info → use "direct" to acknowledge
+   - "email bhejo X ko" / "send email to X" = user wants ACTION → use "emailer"
+   - "save this" / "yaad rakh" / "remember this" = user wants you to note it → use "direct" (memory is auto-saved)
+
+2. CONTEXT IS KING:
+   - ALWAYS check the RECENT CONVERSATION CONTEXT above.
+   - If user says "send this to my girlfriend" and context shows her email was mentioned earlier, use that email.
+   - If user refers to "this", "that", "isko", "yeh" — look at context to understand what they mean.
+
+3. KEYWORD RULES:
+   - "events delete/hatao/remove karo" = ALWAYS scheduler (Google Calendar)
+   - "events dikhao/list/show" = ALWAYS scheduler
+   - "calendar mein add karo" = ALWAYS scheduler
+   - "email bhejo/send/write/likh/compose karo" = ALWAYS emailer
+   - "topics/concepts/course/padhai" + "nikalo/batao" = researcher
+   - "what is my X" / "mera X kya hai" = check memory first, then direct
+
+4. MEMORY vs DIRECT:
+   - Use "memory" ONLY when user asks to recall/find old info ("what did I say before", "do you remember")
+   - Use "direct" for greetings, acknowledging info, simple questions answerable from context
+   - Memory is AUTO-SAVED after every chat — user doesn't need to "save" manually
 
 EXAMPLES:
 
 User: "hello"
 {{"tasks":[{{"id":"t1","agent":"direct","instruction":"Greet the user","depends_on":[]}}]}}
+
+User: "my girlfriend email is abc@gmail.com"
+{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Acknowledge that the user's girlfriend's email is abc@gmail.com and confirm it's noted","depends_on":[]}}]}}
+
+User: "save this in memory" / "yaad rakh"
+{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Confirm to user that the information from our conversation has been saved to memory","depends_on":[]}}]}}
+
+User: "what is my girlfriend's email?" (with context showing it was shared before)
+{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Tell user their girlfriend's email from the conversation context","depends_on":[]}}]}}
+
+User: "what is my girlfriend's email?" (WITHOUT context)
+{{"tasks":[{{"id":"t1","agent":"memory","instruction":"Search memory for girlfriend's email address","depends_on":[]}}]}}
+
+User: "send email to my gf" (context has gf email from earlier)
+{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send email to girlfriend's email address from context","depends_on":[]}}]}}
 
 User: "kal ke events dikhao"
 {{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"List tomorrow's calendar events","depends_on":[]}}]}}
@@ -97,23 +133,14 @@ User: "kal ke events dikhao"
 User: "MERN wale events delete karo"
 {{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"Delete all calendar events with MERN in the title","depends_on":[]}}]}}
 
-User: "sab events hatao"
-{{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"Delete all upcoming calendar events","depends_on":[]}}]}}
-
 User: "MERN topics nikalo aur calendar mein add karo 3-4 PM"
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced MERN stack topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic found, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
-
-User: "purane events dikhao aur MERN topics research karo"
-{{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"List upcoming calendar events","depends_on":[]}},{{"id":"t2","agent":"researcher","instruction":"Research 3 MERN stack topics","depends_on":[]}}]}}
-
-User: "topics nikalo, calendar mein add karo, aur email bhejo"
-{{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 study topics","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Add found topics to calendar","depends_on":["t1"]}},{{"id":"t3","agent":"emailer","instruction":"Email the study plan with topics and calendar links","depends_on":["t1","t2"]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
   ["human", "{input}"],
 ]);
 
-async function makePlan(userMessage: string): Promise<TaskNode[]> {
+async function makePlan(userMessage: string, context?: string): Promise<TaskNode[]> {
   console.log(`\n[Planner] 🧠 Thinking: "${userMessage.substring(0, 80)}..."`);
   try {
     const llm = create8B(512);
@@ -121,6 +148,7 @@ async function makePlan(userMessage: string): Promise<TaskNode[]> {
       input: userMessage,
       today: getToday(),
       tomorrow: getDateStr(1),
+      context: context?.substring(0, 1500) || "No prior context.",
     });
     const raw = typeof result.content === "string" ? result.content : "";
     console.log("[Planner] Raw:", raw.substring(0, 400));
@@ -520,7 +548,7 @@ export async function runPlanner(params: PlannerParams): Promise<PlannerResult> 
   params.onStatus?.("Planning...");
 
   // 1. PLANNER creates task graph
-  const rawTasks = await makePlan(params.userMessage);
+  const rawTasks = await makePlan(params.userMessage, params.context);
 
   // 2. SAFETY validates graph
   const tasks = validateGraph(rawTasks);
