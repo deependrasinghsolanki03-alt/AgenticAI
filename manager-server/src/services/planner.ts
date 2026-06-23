@@ -35,6 +35,7 @@ function getDateStr(offset = 0): string {
 export interface PlannerResult { output: string; toolsUsed: { tool: string; input: string }[]; }
 export interface PlannerParams {
   userMessage: string; context: string; userId: string;
+  userEmail?: string;
   googleAuthClient: OAuth2Client | null;
   embeddings: HuggingFaceTransformersEmbeddings;
   onStatus?: (s: string) => void;
@@ -380,7 +381,7 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         const isSend = instrLower.includes("send") || instrLower.includes("bhejo") || instrLower.includes("write") || instrLower.includes("compose") || instrLower.includes("likh") || instrLower.includes("draft");
 
         if (isSend) {
-          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context);
+          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context, params.userEmail);
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
@@ -472,36 +473,55 @@ CRITICAL RULES:
   return [];
 }
 
-// ── Email Param Extractor (Context-Aware) ──
-async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string): Promise<{ to: string; subject: string; body: string }> {
+// ── Email Param Extractor (Humanized & Context-Aware) ──
+async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string, senderEmail?: string): Promise<{ to: string; subject: string; body: string }> {
   console.log("[ParamExtractor:Email] Extracting email params...");
   const depData = Object.entries(depOutputs).map(([id, out]) => `[${id} output]:\n${out}`).join("\n\n");
 
-  // Try to extract email from context/instruction/userMessage using regex
+  // Extract sender name from email (e.g., "deependrasingh" → "Deependra")
+  let senderName = "Me";
+  if (senderEmail) {
+    const namePart = senderEmail.split("@")[0].replace(/[0-9._-]+$/g, "").replace(/[._-]/g, " ");
+    senderName = namePart.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") || "Me";
+  }
+  console.log(`[ParamExtractor:Email] Sender name: ${senderName}`);
+
+  // Extract recipient email from context using regex
   const allText = `${instruction} ${userMessage} ${context || ""} ${depData}`;
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const foundEmails: string[] = allText.match(emailRegex) || [];
-  // Filter out example/placeholder emails
-  const realEmails = foundEmails.filter((e: string) => !e.includes("example.com") && !e.includes("placeholder") && !e.includes("test.com"));
+  const realEmails = foundEmails.filter((e: string) => 
+    !e.includes("example.com") && !e.includes("placeholder") && !e.includes("test.com") &&
+    e !== senderEmail // Don't send to yourself
+  );
   const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
-  console.log(`[ParamExtractor:Email] Found emails in context: ${realEmails.join(", ")} | Using: ${contextEmail}`);
+  console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", `Extract email parameters from the instruction, context, and task data.
-Output JSON: {{"to":"actual@email.com","subject":"Subject","body":"Full email body"}}
+    ["system", `You are writing an email AS the user (sender: "{sender_name}"). 
+Write it like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
-🚨 CRITICAL RULES:
-1. Use the REAL email address from the context/data below. NEVER use placeholder emails like girlfriend@example.com, user@example.com etc.
-2. The "to" field MUST be a real email address found in the context or user message.
-3. The "body" MUST contain ACTUAL data from the previous tasks below. NEVER use placeholders like [previous task 1], [topic name], etc.
-4. Copy-paste the REAL content from task outputs into the email body.
-5. If you can't find a real email address, set "to" to empty string "".
-6. Format the body nicely with proper greeting, actual content, and sign-off.
+Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
 
-Known email from context: {context_email}
+✍️ WRITING STYLE RULES:
+1. Write like a real person texting/emailing a friend or colleague
+2. Use the SAME LANGUAGE the user chats in. If user speaks Hinglish → write Hinglish email. If English → English.
+3. Keep it SHORT and natural. No corporate jargon like "I hope this email finds you well"
+4. Sign off with the sender's name: "{sender_name}"
+5. If sending to girlfriend/friend → be casual and sweet
+6. If sending study plan/work → be clear but still friendly
+7. Include ALL actual data from previous tasks — topic names, event details, links etc.
+
+🚨 NEVER:
+- Use placeholder emails like girlfriend@example.com
+- Use placeholder text like [previous task 1], [topic name]
+- Write robotic AI-sounding text
+- Write overly formal corporate emails
+
+Known recipient email: {context_email}
 
 Output ONLY valid JSON.`],
-    ["human", `Conversation context:\n{context}\n\nTask data:\n{dep_data}\n\nInstruction: {instruction}\nUser: {user_msg}\n\nJSON:`],
+    ["human", `Context:\n{context}\n\nTask data:\n{dep_data}\n\nInstruction: {instruction}\nUser said: {user_msg}\n\nJSON:`],
   ]);
 
   try {
@@ -512,6 +532,7 @@ Output ONLY valid JSON.`],
       user_msg: userMessage,
       context: (context || "").substring(0, 1000),
       context_email: contextEmail,
+      sender_name: senderName,
     });
     const raw = typeof result.content === "string" ? result.content : "";
     console.log("[ParamExtractor:Email] Raw:", raw.substring(0, 300));
@@ -519,30 +540,32 @@ Output ONLY valid JSON.`],
     if (match) {
       const parsed = JSON.parse(match[0]);
       
-      // Validation: reject placeholder emails
+      // Reject placeholder emails
       if (parsed.to && (parsed.to.includes("example.com") || parsed.to.includes("placeholder") || parsed.to.includes("test.com"))) {
-        console.log(`[ParamExtractor:Email] 🚫 Rejected placeholder email: ${parsed.to}. Using context email: ${contextEmail}`);
         parsed.to = contextEmail;
       }
       
-      // Fallback: if LLM didn't find email, use regex-extracted one
+      // Fallback to regex email
       if (!parsed.to && contextEmail) {
-        console.log(`[ParamExtractor:Email] Using regex-extracted email: ${contextEmail}`);
         parsed.to = contextEmail;
       }
       
-      // Validation: reject placeholder body content
+      // Reject placeholder body
       if (parsed.body && (parsed.body.includes("[previous task") || parsed.body.includes("[topic"))) {
-        console.log("[ParamExtractor:Email] 🚫 Body has placeholders. Rebuilding from task data.");
-        parsed.body = `Here is your update:\n\n${depData.substring(0, 1500)}\n\nBest regards,\nAgenticAI`;
+        parsed.body = `Hey!\n\nHere's what I have for you:\n\n${depData.substring(0, 1500)}\n\n— ${senderName}`;
+      }
+      
+      // Ensure sign-off has sender name
+      if (parsed.body && !parsed.body.includes(senderName)) {
+        parsed.body += `\n\n— ${senderName}`;
       }
       
       return parsed;
     }
   } catch (err: any) { console.error("[ParamExtractor:Email] Error:", err.message); }
   
-  // Last resort fallback with context email
-  return { to: contextEmail, subject: "AgenticAI Update", body: depData.substring(0, 1500) || "No data available." };
+  // Fallback
+  return { to: contextEmail, subject: "Hey!", body: `Hey!\n\n${depData.substring(0, 1500) || "Just checking in!"}\n\n— ${senderName}` };
 }
 
 // ── Date Range Detector (no LLM needed) ──

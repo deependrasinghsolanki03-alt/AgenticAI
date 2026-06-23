@@ -79,9 +79,16 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     sendEvent(res, "status", { stage: "planning", detail: "Planning response..." });
     const googleAuthClient = await getGoogleAuthClient(userId);
 
+    // Get user's email for personalized emails
+    let userEmail: string | undefined;
+    try {
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+      userEmail = userData?.user?.email || undefined;
+    } catch {} // silently fail
+
     // Planner
     const onStatus = (detail: string) => sendEvent(res, "status", { stage: "researching", detail });
-    const plannerResult = await runPlanner({ userMessage, context: contextText, userId, googleAuthClient: googleAuthClient as any, embeddings, onStatus });
+    const plannerResult = await runPlanner({ userMessage, context: contextText, userId, userEmail, googleAuthClient: googleAuthClient as any, embeddings, onStatus });
 
     if (plannerResult.toolsUsed.length > 0) {
       for (const tool of plannerResult.toolsUsed) sendEvent(res, "tool", { name: tool.tool, input: tool.input });
