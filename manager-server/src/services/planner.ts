@@ -380,7 +380,7 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         const isSend = instrLower.includes("send") || instrLower.includes("bhejo") || instrLower.includes("write") || instrLower.includes("compose") || instrLower.includes("likh") || instrLower.includes("draft");
 
         if (isSend) {
-          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage);
+          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context);
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
@@ -472,27 +472,77 @@ CRITICAL RULES:
   return [];
 }
 
-// ── Email Param Extractor ──
-async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string): Promise<{ to: string; subject: string; body: string }> {
+// ── Email Param Extractor (Context-Aware) ──
+async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string): Promise<{ to: string; subject: string; body: string }> {
   console.log("[ParamExtractor:Email] Extracting email params...");
   const depData = Object.entries(depOutputs).map(([id, out]) => `[${id} output]:\n${out}`).join("\n\n");
 
+  // Try to extract email from context/instruction/userMessage using regex
+  const allText = `${instruction} ${userMessage} ${context || ""} ${depData}`;
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const foundEmails: string[] = allText.match(emailRegex) || [];
+  // Filter out example/placeholder emails
+  const realEmails = foundEmails.filter((e: string) => !e.includes("example.com") && !e.includes("placeholder") && !e.includes("test.com"));
+  const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
+  console.log(`[ParamExtractor:Email] Found emails in context: ${realEmails.join(", ")} | Using: ${contextEmail}`);
+
   const prompt = ChatPromptTemplate.fromMessages([
-    ["system", `Extract email parameters from the instruction and data.
-Output JSON: {{"to":"email@example.com","subject":"Subject","body":"Full email body"}}
-Include ALL data from previous tasks in the body.
+    ["system", `Extract email parameters from the instruction, context, and task data.
+Output JSON: {{"to":"actual@email.com","subject":"Subject","body":"Full email body"}}
+
+🚨 CRITICAL RULES:
+1. Use the REAL email address from the context/data below. NEVER use placeholder emails like girlfriend@example.com, user@example.com etc.
+2. The "to" field MUST be a real email address found in the context or user message.
+3. The "body" MUST contain ACTUAL data from the previous tasks below. NEVER use placeholders like [previous task 1], [topic name], etc.
+4. Copy-paste the REAL content from task outputs into the email body.
+5. If you can't find a real email address, set "to" to empty string "".
+6. Format the body nicely with proper greeting, actual content, and sign-off.
+
+Known email from context: {context_email}
+
 Output ONLY valid JSON.`],
-    ["human", `Data:\n{dep_data}\n\nInstruction: {instruction}\nUser: {user_msg}\n\nJSON:`],
+    ["human", `Conversation context:\n{context}\n\nTask data:\n{dep_data}\n\nInstruction: {instruction}\nUser: {user_msg}\n\nJSON:`],
   ]);
 
   try {
     const llm = create8B(1024);
-    const result = await prompt.pipe(llm).invoke({ dep_data: depData.substring(0, 2000), instruction, user_msg: userMessage });
+    const result = await prompt.pipe(llm).invoke({
+      dep_data: depData.substring(0, 2000),
+      instruction,
+      user_msg: userMessage,
+      context: (context || "").substring(0, 1000),
+      context_email: contextEmail,
+    });
     const raw = typeof result.content === "string" ? result.content : "";
+    console.log("[ParamExtractor:Email] Raw:", raw.substring(0, 300));
     const match = raw.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      
+      // Validation: reject placeholder emails
+      if (parsed.to && (parsed.to.includes("example.com") || parsed.to.includes("placeholder") || parsed.to.includes("test.com"))) {
+        console.log(`[ParamExtractor:Email] 🚫 Rejected placeholder email: ${parsed.to}. Using context email: ${contextEmail}`);
+        parsed.to = contextEmail;
+      }
+      
+      // Fallback: if LLM didn't find email, use regex-extracted one
+      if (!parsed.to && contextEmail) {
+        console.log(`[ParamExtractor:Email] Using regex-extracted email: ${contextEmail}`);
+        parsed.to = contextEmail;
+      }
+      
+      // Validation: reject placeholder body content
+      if (parsed.body && (parsed.body.includes("[previous task") || parsed.body.includes("[topic"))) {
+        console.log("[ParamExtractor:Email] 🚫 Body has placeholders. Rebuilding from task data.");
+        parsed.body = `Here is your update:\n\n${depData.substring(0, 1500)}\n\nBest regards,\nAgenticAI`;
+      }
+      
+      return parsed;
+    }
   } catch (err: any) { console.error("[ParamExtractor:Email] Error:", err.message); }
-  return { to: "", subject: "AgenticAI Update", body: "" };
+  
+  // Last resort fallback with context email
+  return { to: contextEmail, subject: "AgenticAI Update", body: depData.substring(0, 1500) || "No data available." };
 }
 
 // ── Date Range Detector (no LLM needed) ──

@@ -219,7 +219,7 @@ export default function Chat() {
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, session_id: activeSessionId }),
       });
 
       if (!response.ok) {

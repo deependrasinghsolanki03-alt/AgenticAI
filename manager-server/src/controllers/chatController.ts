@@ -14,7 +14,7 @@ function sendEvent(res: Response, event: string, data: Record<string, unknown>) 
 export async function handleChat(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
   const userId = req.user_id!;
-  const { message } = req.body;
+  const { message, session_id } = req.body;
 
   if (!message || typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "Field 'message' is required." });
@@ -34,14 +34,21 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     sendEvent(res, "status", { stage: "memory", detail: "Retrieving memory..." });
     const embeddings = await getEmbeddingModel();
 
-    // 1. Short-term Memory (Recent Chat History)
+    // 1. Short-term Memory (Recent Chat History — filtered by session)
     let shortTermContext = "";
-    const { data: recentMessages } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("chat_messages")
       .select("role, content")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(6);
+
+    // Filter by session if provided — keeps sessions isolated
+    if (session_id) {
+      query = query.eq("session_id", session_id);
+    }
+
+    const { data: recentMessages } = await query;
 
     if (recentMessages && recentMessages.length > 0) {
       shortTermContext = "=== RECENT CONVERSATION HISTORY ===\n" + 
