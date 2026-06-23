@@ -63,12 +63,39 @@ export async function updateSession(req: Request, res: Response): Promise<void> 
   }
 }
 
-// DELETE /api/sessions/:id — Delete a chat session and its messages
+// DELETE /api/sessions/:id — Delete session + messages + memory + Pinecone vectors
 export async function deleteSession(req: Request, res: Response): Promise<void> {
   try {
     const userId = req.user_id!;
     const sessionId = req.params.id;
 
+    // 1. Find memory_logs for this session (to get Pinecone vector IDs)
+    const { data: memoryLogs } = await supabaseAdmin
+      .from("memory_logs")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("session_id", sessionId);
+
+    // 2. Delete Pinecone vectors by IDs
+    if (memoryLogs && memoryLogs.length > 0) {
+      const vectorIds = memoryLogs.map(log => log.id);
+      try {
+        const { pineconeIndex } = await import("../config/pinecone.js");
+        await pineconeIndex.namespace(userId).deleteMany(vectorIds);
+        console.log(`[Sessions] 🗑️ Deleted ${vectorIds.length} Pinecone vectors for session ${sessionId}`);
+      } catch (pineconeErr: any) {
+        console.error("[Sessions] Pinecone cleanup error:", pineconeErr.message);
+      }
+    }
+
+    // 3. Delete memory_logs for this session
+    await supabaseAdmin
+      .from("memory_logs")
+      .delete()
+      .eq("user_id", userId)
+      .eq("session_id", sessionId);
+
+    // 4. Delete the session (CASCADE deletes chat_messages)
     const { error } = await supabaseAdmin
       .from("chat_sessions")
       .delete()
@@ -76,6 +103,7 @@ export async function deleteSession(req: Request, res: Response): Promise<void> 
       .eq("user_id", userId);
 
     if (error) throw error;
+    console.log(`[Sessions] ✅ Fully deleted session ${sessionId} (messages + memory + vectors)`);
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Sessions] Delete error:", err.message);

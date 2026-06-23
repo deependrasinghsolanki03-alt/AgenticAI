@@ -93,10 +93,10 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     // Memory write-back (after response)
     const logText = `User: ${userMessage}\nAssistant: ${plannerResult.output}`;
     try {
-      const { data: savedLog, error: saveError } = await supabaseAdmin.from("memory_logs").insert({ user_id: userId, log_text: logText }).select("id").single();
+      const { data: savedLog, error: saveError } = await supabaseAdmin.from("memory_logs").insert({ user_id: userId, log_text: logText, session_id: session_id || null }).select("id").single();
       if (!saveError && savedLog?.id) {
         const store = await PineconeStore.fromExistingIndex(embeddings, { pineconeIndex, namespace: userId });
-        await store.addDocuments([{ pageContent: logText, metadata: { log_id: savedLog.id, user_id: userId, timestamp: new Date().toISOString() } }], { ids: [savedLog.id] });
+        await store.addDocuments([{ pageContent: logText, metadata: { log_id: savedLog.id, user_id: userId, session_id: session_id || "", timestamp: new Date().toISOString() } }], { ids: [savedLog.id] });
         console.log(`[Memory] Saved: ${savedLog.id}`);
       }
     } catch (memErr: any) { console.error("[Memory] Error:", memErr.message); }
