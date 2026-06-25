@@ -520,6 +520,41 @@ Output ONLY valid JSON.`],
           if (match) {
             const parsed = JSON.parse(match[0]);
             
+            // CODE-LEVEL max_runs calculation (don't trust LLM math)
+            let maxRuns = parsed.max_runs;
+            const userMsg = params.userMessage.toLowerCase();
+            const repeatPat = (parsed.repeat_pattern || "").toLowerCase();
+            
+            // Extract interval in minutes from repeat_pattern
+            let intervalMinutes = 0;
+            const intervalMatch = repeatPat.match(/every\s+(\d+)\s+minute/);
+            const intervalHrMatch = repeatPat.match(/every\s+(\d+)\s+hour/);
+            if (intervalMatch) intervalMinutes = parseInt(intervalMatch[1]);
+            else if (intervalHrMatch) intervalMinutes = parseInt(intervalHrMatch[1]) * 60;
+            
+            // Extract duration from user message (X min tak, X hr tak, X ghante tak)
+            const durMinMatch = userMsg.match(/(\d+)\s*(?:min|minute)/);
+            const durHrMatch = userMsg.match(/(\d+)\s*(?:hr|hour|ghant)/);
+            const durDinMatch = userMsg.match(/(\d+)\s*(?:din|day)/);
+            
+            let durationMinutes = 0;
+            if (durHrMatch) durationMinutes = parseInt(durHrMatch[1]) * 60;
+            if (durMinMatch) {
+              const durVal = parseInt(durMinMatch[1]);
+              // If "har 5 min 15 min tak" — first number is interval, second is duration
+              // Check if this minute value is the duration (comes with "tak"/"for")
+              const durTakMatch = userMsg.match(/(\d+)\s*(?:min|minute)\s*(?:tak|for|ke liye)/);
+              if (durTakMatch) durationMinutes = parseInt(durTakMatch[1]);
+              else if (!intervalMatch && durVal > intervalMinutes) durationMinutes = durVal;
+            }
+            if (durDinMatch && intervalMinutes > 0) durationMinutes = parseInt(durDinMatch[1]) * 24 * 60;
+            
+            // Calculate max_runs from duration and interval
+            if (intervalMinutes > 0 && durationMinutes > 0) {
+              maxRuns = Math.floor(durationMinutes / intervalMinutes);
+              console.log(`[TaskScheduler] Calculated max_runs: ${durationMinutes}min / ${intervalMinutes}min = ${maxRuns}`);
+            }
+            
             // Save to database
             const { data: saved, error: saveErr } = await supabaseAdmin
               .from("scheduled_tasks")
@@ -528,7 +563,7 @@ Output ONLY valid JSON.`],
                 instruction: parsed.instruction || task.instruction,
                 scheduled_time: parsed.scheduled_time,
                 repeat_pattern: parsed.repeat_pattern || null,
-                max_runs: parsed.max_runs || null,
+                max_runs: maxRuns || null,
               })
               .select("id, scheduled_time, repeat_pattern")
               .single();
@@ -537,7 +572,7 @@ Output ONLY valid JSON.`],
 
             const schedTime = new Date(saved.scheduled_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
             const repeatText = saved.repeat_pattern ? ` (🔄 ${saved.repeat_pattern})` : "";
-            output = `✅ Task scheduled!\n\n⏰ **Time:** ${schedTime}${repeatText}\n📝 **Task:** ${parsed.instruction}\n${parsed.max_runs ? `🔢 **Runs:** ${parsed.max_runs} times` : ""}`;
+            output = `✅ Task scheduled!\n\n⏰ **Time:** ${schedTime}${repeatText}\n📝 **Task:** ${parsed.instruction}\n${maxRuns ? `🔢 **Runs:** ${maxRuns} times` : ""}`;
           } else {
             output = "Time samajh nahi aaya. Please specify time clearly (e.g., 'kal subah 9 baje').";
           }
