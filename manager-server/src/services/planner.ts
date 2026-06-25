@@ -424,8 +424,28 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         params.onStatus?.("Scheduling task...");
         const instrLower = task.instruction.toLowerCase();
         
+        // Check CANCEL first (before list, to avoid "scheduled" keyword conflict)
+        if (instrLower.includes("cancel") || instrLower.includes("hatao") || instrLower.includes("delete") || instrLower.includes("band karo") || instrLower.includes("stop") || instrLower.includes("cancel karo") || instrLower.includes("rok")) {
+          const { data: tasks } = await supabaseAdmin
+            .from("scheduled_tasks")
+            .select("id, instruction")
+            .eq("user_id", params.userId)
+            .eq("status", "pending");
+
+          if (!tasks || tasks.length === 0) {
+            output = "Koi pending task nahi hai cancel karne ke liye.";
+          } else {
+            for (const t of tasks) {
+              await supabaseAdmin.from("scheduled_tasks").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", t.id);
+            }
+            output = `✅ ${tasks.length} scheduled task(s) cancel kar diye.`;
+          }
+          toolsUsed.push({ tool: "task_scheduler", input: "cancel tasks" });
+          break;
+        }
+
         // Check if user wants to LIST tasks
-        if (instrLower.includes("list") || instrLower.includes("dikhao") || instrLower.includes("show") || instrLower.includes("pending") || instrLower.includes("scheduled")) {
+        if (instrLower.includes("list") || instrLower.includes("dikhao") || instrLower.includes("show") || instrLower.includes("pending") || instrLower.includes("scheduled") || instrLower.includes("tasks")) {
           const { data: tasks } = await supabaseAdmin
             .from("scheduled_tasks")
             .select("id, instruction, scheduled_time, repeat_pattern, status, run_count")
@@ -443,27 +463,6 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
             }).join("\n\n");
           }
           toolsUsed.push({ tool: "task_scheduler", input: "list tasks" });
-          break;
-        }
-        
-        // Check if user wants to CANCEL a task
-        if (instrLower.includes("cancel") || instrLower.includes("hatao") || instrLower.includes("delete") || instrLower.includes("band karo")) {
-          const { data: tasks } = await supabaseAdmin
-            .from("scheduled_tasks")
-            .select("id, instruction")
-            .eq("user_id", params.userId)
-            .eq("status", "pending");
-
-          if (!tasks || tasks.length === 0) {
-            output = "Koi pending task nahi hai cancel karne ke liye.";
-          } else {
-            // Cancel all pending or let LLM figure out which one
-            for (const t of tasks) {
-              await supabaseAdmin.from("scheduled_tasks").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", t.id);
-            }
-            output = `✅ ${tasks.length} scheduled task(s) cancel kar diye.`;
-          }
-          toolsUsed.push({ tool: "task_scheduler", input: "cancel tasks" });
           break;
         }
 
