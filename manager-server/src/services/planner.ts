@@ -92,7 +92,7 @@ RULE 2 — FUTURE TIME or REPEAT detected:
   → ALWAYS use "task_scheduler"
   → instruction mein INCLUDE karo: time + repeat + actual task
   Example: "kal 9 baje GF ko good morning email karo" → task_scheduler: "Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend"
-  Example: "har 2 min mai 1 hr tak email karo" → task_scheduler: "Schedule every 2 minutes for 1 hour: Send good morning email to deependrasinghsolanki45@gmail.com"
+  Example: "har 2 min mai 1 hr tak email karo" → task_scheduler: "Schedule every 2 minutes for 1 hour: Send email to the recipient from context"
 
 RULE 3 — IMMEDIATE EMAIL (no future time):
   Keywords: "email bhejo/send/karo", "mail bhejo", "likh", "compose", "draft"
@@ -501,7 +501,7 @@ SCHEDULED TIME RULES (VERY IMPORTANT):
 - NEVER default to 09:00 AM when user wants something to start immediately (no "kal"/"tomorrow" mentioned)
 - If "har 2 min mai 1 hr tak" → scheduled_time = NOW (current time), repeat = every 2 minutes, max_runs = 30
 
-- The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to girlfriend"), NOT the scheduling part
+- The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to user@gmail.com"), NOT the scheduling part
 - Use IST timezone (+05:30)
 - For current time, use: {current_time}
 Output ONLY valid JSON.`],
@@ -669,7 +669,7 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
   console.log("[ParamExtractor:Email] Extracting email params...");
   const depData = Object.entries(depOutputs).map(([id, out]) => `[${id} output]:\n${out}`).join("\n\n");
 
-  // Extract sender name from email (e.g., "deependrasingh" → "Deependra")
+  // Extract sender name from email (e.g., "johnsmith" → "John")
   let senderName = "Me";
   if (senderEmail) {
     const namePart = senderEmail.split("@")[0].replace(/[0-9._-]+$/g, "").replace(/[._-]/g, " ");
