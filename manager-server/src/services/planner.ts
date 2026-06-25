@@ -479,7 +479,7 @@ Extract scheduling details from the instruction. Output JSON:
 Rules:
 - "kal" = tomorrow, "parso" = day after tomorrow
 - "subah 9 baje" = 09:00, "shaam 5 baje" = 17:00, "raat 10 baje" = 22:00
-- "har X min" / "every X minutes" → repeat_pattern = "every X minutes", scheduled_time = NOW + X minutes
+- "har X min" / "every X minutes" → repeat_pattern = "every X minutes"
 - "har X ghante" / "every X hours" → repeat_pattern = "every X hours"
 - "roz" / "daily" / "har din" → repeat_pattern = "daily"
 - "weekly" / "har hafte" → repeat_pattern = "weekly"
@@ -490,10 +490,17 @@ Rules:
 - "30 min tak" with "har 5 min" → max_runs = 30/5 = 6
 - Calculate max_runs from duration and interval when both are given
 - "hamesha" / "forever" → max_runs = null
-- If no specific time mentioned and task is for NOW, use current time + interval
-- If no time mentioned and task is for future, default to 09:00 AM
+
+SCHEDULED TIME RULES (VERY IMPORTANT):
+- If user says "kal" → scheduled_time = tomorrow at the specified time (or 09:00 if no time given)
+- If user says "roz subah 8 baje" → scheduled_time = NEXT occurrence of 8 AM (today if not passed, tomorrow if passed)
+- If user says "har X min" / "har X ghante" WITHOUT "kal"/"tomorrow" → scheduled_time = CURRENT TIME ({current_time}). This means START NOW.
+- NEVER default to 09:00 AM when user wants something to start immediately (no "kal"/"tomorrow" mentioned)
+- If "har 2 min mai 1 hr tak" → scheduled_time = NOW (current time), repeat = every 2 minutes, max_runs = 30
+
 - The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to girlfriend"), NOT the scheduling part
 - Use IST timezone (+05:30)
+- For current time, use: {current_time}
 Output ONLY valid JSON.`],
           ["human", `Instruction: {instruction}\nUser message: {user_msg}\n\nJSON:`],
         ]);
