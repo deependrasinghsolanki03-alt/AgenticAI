@@ -64,6 +64,7 @@ app.get("/api/tasks", verifyAuth, listScheduledTasks);
 app.delete("/api/tasks/:id", verifyAuth, cancelScheduledTask);
 
 // Scheduler Tick — called by cron-job.org (protected by secret)
+// Responds INSTANTLY, processes tasks in background (fits 30s timeout)
 app.get("/api/scheduler/tick", async (req, res) => {
   const secret = req.query.secret || req.headers["x-scheduler-secret"];
   const expectedSecret = process.env.INTERNAL_SECRET || "agenticai-internal-secret-2026";
@@ -71,14 +72,16 @@ app.get("/api/scheduler/tick", async (req, res) => {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+  // Respond immediately — don't make cron-job.org wait
+  res.json({ status: "ok", message: "Scheduler tick started", timestamp: new Date().toISOString() });
+  
+  // Process tasks in background (after response sent)
   try {
     const { runSchedulerTick } = await import("./services/scheduler.js");
     const result = await runSchedulerTick();
-    console.log(`[Scheduler Tick] Processed: ${result.processed}, Errors: ${result.errors}`);
-    res.json({ status: "ok", ...result, timestamp: new Date().toISOString() });
+    console.log(`[Scheduler Tick] Done — Processed: ${result.processed}, Errors: ${result.errors}`);
   } catch (err: any) {
-    console.error("[Scheduler Tick] Error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("[Scheduler Tick] Background error:", err.message);
   }
 });
 
