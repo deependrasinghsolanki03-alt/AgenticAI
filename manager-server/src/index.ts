@@ -63,6 +63,25 @@ app.delete("/api/chats", verifyAuth, clearChats);
 app.get("/api/tasks", verifyAuth, listScheduledTasks);
 app.delete("/api/tasks/:id", verifyAuth, cancelScheduledTask);
 
+// Scheduler Tick — called by cron-job.org (protected by secret)
+app.get("/api/scheduler/tick", async (req, res) => {
+  const secret = req.query.secret || req.headers["x-scheduler-secret"];
+  const expectedSecret = process.env.INTERNAL_SECRET || "agenticai-internal-secret-2026";
+  if (secret !== expectedSecret) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const { runSchedulerTick } = await import("./services/scheduler.js");
+    const result = await runSchedulerTick();
+    console.log(`[Scheduler Tick] Processed: ${result.processed}, Errors: ${result.errors}`);
+    res.json({ status: "ok", ...result, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Scheduler Tick] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Info
 app.get("/", (_req, res) => res.json({
   name: "AgenticAI Manager v2", version: "2.0.0",

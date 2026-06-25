@@ -132,14 +132,42 @@ async function tick(): Promise<void> {
   }
 }
 
-// ── Start/Stop ──
-export function startScheduler(): void {
-  if (intervalId) return;
-  console.log("[Scheduler] 🕐 Starting background scheduler (60s interval)...");
-  intervalId = setInterval(tick, 60_000);
-  tick(); // Run immediately to catch overdue tasks
+// ── External Trigger (called by cron-job.org) ──
+export async function runSchedulerTick(): Promise<{ processed: number; errors: number }> {
+  if (isRunning) return { processed: 0, errors: 0 };
+  isRunning = true;
+  let processed = 0;
+  let errors = 0;
+  try {
+    const now = new Date().toISOString();
+    const { data: dueTasks, error } = await supabaseAdmin
+      .from("scheduled_tasks")
+      .select("*")
+      .eq("status", "pending")
+      .lte("scheduled_time", now)
+      .order("scheduled_time", { ascending: true })
+      .limit(5);
+
+    if (error) { console.error("[Scheduler] DB error:", error.message); return { processed: 0, errors: 1 }; }
+    if (dueTasks && dueTasks.length > 0) {
+      console.log(`[Scheduler] Found ${dueTasks.length} due task(s).`);
+      for (const task of dueTasks) {
+        try {
+          await executeTask(task);
+          processed++;
+        } catch { errors++; }
+      }
+    }
+  } catch (err: any) {
+    console.error("[Scheduler] Tick error:", err.message);
+    errors++;
+  } finally {
+    isRunning = false;
+  }
+  return { processed, errors };
 }
 
-export function stopScheduler(): void {
-  if (intervalId) { clearInterval(intervalId); intervalId = null; console.log("[Scheduler] Stopped."); }
+// Keep startScheduler for backwards compat (does nothing now — external cron handles it)
+export function startScheduler(): void {
+  console.log("[Scheduler] ⏰ External cron mode — waiting for /api/scheduler/tick calls from cron-job.org");
 }
