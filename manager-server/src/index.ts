@@ -6,7 +6,9 @@ import { verifyAuth } from "./middleware/auth.js";
 import { handleChat } from "./controllers/chatController.js";
 import { handleEmbed } from "./controllers/embedController.js";
 import { loadChats, saveChat, clearChats, listSessions, createSession, updateSession, deleteSession } from "./controllers/chatHistoryController.js";
+import { listScheduledTasks, cancelScheduledTask } from "./controllers/taskController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
+import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
 
@@ -57,6 +59,10 @@ app.get("/api/chats", verifyAuth, loadChats);
 app.post("/api/chats/save", verifyAuth, saveChat);
 app.delete("/api/chats", verifyAuth, clearChats);
 
+// Scheduled Tasks
+app.get("/api/tasks", verifyAuth, listScheduledTasks);
+app.delete("/api/tasks/:id", verifyAuth, cancelScheduledTask);
+
 // Info
 app.get("/", (_req, res) => res.json({
   name: "AgenticAI Manager v2", version: "2.0.0",
@@ -80,7 +86,9 @@ async function boot() {
       console.log(`\n   🎯 Planner:    llama-3.1-8b-instant`);
       console.log(`   🔬 Worker:     ${process.env.WORKER_URL}`);
       console.log(`   🔤 Embedding:  Xenova/all-MiniLM-L6-v2 (384-dim)`);
-      console.log(`   🔒 Auth:       Supabase JWT + Google refresh_token\n`);
+      console.log(`   🔒 Auth:       Supabase JWT + Google refresh_token`);
+      console.log(`   ⏰ Scheduler:  Background task runner (60s interval)\n`);
+      startScheduler();
     });
   } catch (err) { console.error("❌ Boot failed:", err); process.exit(1); }
 }

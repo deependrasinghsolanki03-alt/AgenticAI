@@ -17,6 +17,7 @@ import { createGmailTool } from "../tools/gmailTool.js";
 import { createMemoryTool } from "../tools/memoryTool.js";
 import { createWorkerTool } from "../tools/workerTool.js";
 import { getNextKey } from "../utils/keyRotator.js";
+import { supabaseAdmin } from "../config/supabase.js";
 
 // ── Helpers ─────────────────────────────────────
 function create8B(maxTokens = 1024): ChatGroq {
@@ -43,7 +44,7 @@ export interface PlannerParams {
 
 interface TaskNode {
   id: string;
-  agent: "researcher" | "scheduler" | "emailer" | "memory" | "direct";
+  agent: "researcher" | "scheduler" | "emailer" | "memory" | "direct" | "task_scheduler";
   instruction: string;
   depends_on: string[];
 }
@@ -73,6 +74,7 @@ Available agents:
 - "emailer" — Send or search Gmail (ONLY when user EXPLICITLY asks to send/search email)
 - "memory" — Recall past conversations from memory (ONLY for searching/querying old memories)
 - "direct" — Simple chat, greetings, math, acknowledging info, answering questions using context
+- "task_scheduler" — Schedule tasks for FUTURE execution (kal, next week, roz subah, daily, weekly, monthly)
 
 Output a JSON object with "tasks" array. Each task:
 {{
@@ -90,16 +92,25 @@ Output a JSON object with "tasks" array. Each task:
    - "email bhejo X ko" / "send email to X" = user wants ACTION → use "emailer"
    - "save this" / "yaad rakh" / "remember this" = user wants you to note it → use "direct" (memory is auto-saved)
 
-2. CONTEXT IS KING:
+2. FUTURE vs NOW — VERY IMPORTANT:
+   - If user says "kal", "tomorrow", "next Monday", "9 AM", "roz subah", "daily", "weekly", "har din" → use "task_scheduler"
+   - If user says "abhi email karo", "send now", "bhej do" (no future time) → use "emailer" / "scheduler" directly
+   - "kal 9 baje GF ko good morning bhejo" = task_scheduler (FUTURE time)
+   - "GF ko email bhejo" (no time mentioned, means now) = emailer
+   - "roz subah 8 baje reminder do" = task_scheduler (RECURRING)
+   - "mere scheduled tasks dikhao" / "pending tasks" = task_scheduler (with instruction to list tasks)
+   - "task cancel karo" = task_scheduler (with instruction to cancel)
+
+3. CONTEXT IS KING:
    - ALWAYS check the RECENT CONVERSATION CONTEXT above.
    - If user says "send this to my girlfriend" and context shows her email was mentioned earlier, use that email.
    - If user refers to "this", "that", "isko", "yeh" — look at context to understand what they mean.
 
-3. KEYWORD RULES:
+4. KEYWORD RULES:
    - "events delete/hatao/remove karo" = ALWAYS scheduler (Google Calendar)
    - "events dikhao/list/show" = ALWAYS scheduler
    - "calendar mein add karo" = ALWAYS scheduler
-   - "email bhejo/send/write/likh/compose karo" = ALWAYS emailer
+   - "email bhejo/send/write/likh/compose karo" (no future time) = ALWAYS emailer
    - "topics/concepts/course/padhai" + "nikalo/batao" = researcher
    - "what is my X" / "mera X kya hai" = check memory first, then direct
 
@@ -136,6 +147,15 @@ User: "MERN wale events delete karo"
 
 User: "MERN topics nikalo aur calendar mein add karo 3-4 PM"
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced MERN stack topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic found, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
+
+User: "kal subah 9 baje GF ko good morning email karo"
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend","depends_on":[]}}]}}
+
+User: "roz subah 8 baje mujhe study reminder email karo, 5 din tak"
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule daily at 8 AM for 5 days: Send a study reminder email to me with motivational message","depends_on":[]}}]}}
+
+User: "mere scheduled tasks dikhao"
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"List all pending scheduled tasks","depends_on":[]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
   ["human", "{input}"],
@@ -385,7 +405,10 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
-            output = await gmailTool.invoke({ action: "send", to: emailParams.to, subject: emailParams.subject, body: emailParams.body });
+            const sendResult = await gmailTool.invoke({ action: "send", to: emailParams.to, subject: emailParams.subject, body: emailParams.body });
+            // Show what was actually sent
+            const bodyPreview = emailParams.body.length > 300 ? emailParams.body.substring(0, 300) + "..." : emailParams.body;
+            output = `${sendResult}\n\n📧 **To:** ${emailParams.to}\n📌 **Subject:** ${emailParams.subject}\n\n**Message:**\n${bodyPreview}`;
             toolsUsed.push({ tool: "gmail", input: `send to: ${emailParams.to}` });
           }
         } else {
@@ -393,6 +416,119 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
           output = await gmailTool.invoke({ action: "search", query: query || "is:unread" });
           toolsUsed.push({ tool: "gmail", input: `search: ${query}` });
         }
+        break;
+      }
+
+      // ── TASK_SCHEDULER: Schedule future/recurring tasks ──
+      case "task_scheduler": {
+        params.onStatus?.("Scheduling task...");
+        const instrLower = task.instruction.toLowerCase();
+        
+        // Check if user wants to LIST tasks
+        if (instrLower.includes("list") || instrLower.includes("dikhao") || instrLower.includes("show") || instrLower.includes("pending") || instrLower.includes("scheduled")) {
+          const { data: tasks } = await supabaseAdmin
+            .from("scheduled_tasks")
+            .select("id, instruction, scheduled_time, repeat_pattern, status, run_count")
+            .eq("user_id", params.userId)
+            .in("status", ["pending", "running"])
+            .order("scheduled_time", { ascending: true });
+
+          if (!tasks || tasks.length === 0) {
+            output = "Koi scheduled task nahi hai abhi. 📭";
+          } else {
+            output = `📋 **Scheduled Tasks (${tasks.length}):**\n\n` + tasks.map((t, i) => {
+              const time = new Date(t.scheduled_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+              const repeat = t.repeat_pattern ? ` (🔄 ${t.repeat_pattern})` : " (one-time)";
+              return `${i + 1}. **${t.instruction.substring(0, 60)}**\n   ⏰ ${time}${repeat} | Status: ${t.status}\n   ID: \`${t.id.substring(0, 8)}...\``;
+            }).join("\n\n");
+          }
+          toolsUsed.push({ tool: "task_scheduler", input: "list tasks" });
+          break;
+        }
+        
+        // Check if user wants to CANCEL a task
+        if (instrLower.includes("cancel") || instrLower.includes("hatao") || instrLower.includes("delete") || instrLower.includes("band karo")) {
+          const { data: tasks } = await supabaseAdmin
+            .from("scheduled_tasks")
+            .select("id, instruction")
+            .eq("user_id", params.userId)
+            .eq("status", "pending");
+
+          if (!tasks || tasks.length === 0) {
+            output = "Koi pending task nahi hai cancel karne ke liye.";
+          } else {
+            // Cancel all pending or let LLM figure out which one
+            for (const t of tasks) {
+              await supabaseAdmin.from("scheduled_tasks").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", t.id);
+            }
+            output = `✅ ${tasks.length} scheduled task(s) cancel kar diye.`;
+          }
+          toolsUsed.push({ tool: "task_scheduler", input: "cancel tasks" });
+          break;
+        }
+
+        // SCHEDULE a new task — extract time + repeat pattern using 8B
+        const timePrompt = ChatPromptTemplate.fromMessages([
+          ["system", `Today is {today}. Current time in IST: {current_time}.
+Extract scheduling details from the instruction. Output JSON:
+{{"scheduled_time":"YYYY-MM-DDTHH:mm:ss+05:30","repeat_pattern":null,"max_runs":null,"instruction":"the actual task to execute"}}
+
+Rules:
+- "kal" = tomorrow, "parso" = day after tomorrow
+- "subah 9 baje" = 09:00, "shaam 5 baje" = 17:00, "raat 10 baje" = 22:00
+- "roz" / "daily" / "har din" → repeat_pattern = "daily"
+- "weekly" / "har hafte" → repeat_pattern = "weekly"
+- "monthly" / "har mahine" → repeat_pattern = "monthly"
+- "5 din tak" / "for 5 days" → max_runs = 5
+- "hamesha" / "forever" → max_runs = null
+- If no specific time mentioned, default to 09:00 AM
+- The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to girlfriend"), NOT the scheduling part
+- Use IST timezone (+05:30)
+Output ONLY valid JSON.`],
+          ["human", `Instruction: {instruction}\nUser message: {user_msg}\n\nJSON:`],
+        ]);
+
+        try {
+          const llm = create8B(512);
+          const currentTime = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+          const result = await timePrompt.pipe(llm).invoke({
+            today: getToday(),
+            current_time: currentTime,
+            instruction: task.instruction,
+            user_msg: params.userMessage,
+          });
+          const raw = typeof result.content === "string" ? result.content : "";
+          console.log("[TaskScheduler] Raw:", raw.substring(0, 300));
+          const match = raw.match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            
+            // Save to database
+            const { data: saved, error: saveErr } = await supabaseAdmin
+              .from("scheduled_tasks")
+              .insert({
+                user_id: params.userId,
+                instruction: parsed.instruction || task.instruction,
+                scheduled_time: parsed.scheduled_time,
+                repeat_pattern: parsed.repeat_pattern || null,
+                max_runs: parsed.max_runs || null,
+              })
+              .select("id, scheduled_time, repeat_pattern")
+              .single();
+
+            if (saveErr) throw saveErr;
+
+            const schedTime = new Date(saved.scheduled_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+            const repeatText = saved.repeat_pattern ? ` (🔄 ${saved.repeat_pattern})` : "";
+            output = `✅ Task scheduled!\n\n⏰ **Time:** ${schedTime}${repeatText}\n📝 **Task:** ${parsed.instruction}\n${parsed.max_runs ? `🔢 **Runs:** ${parsed.max_runs} times` : ""}`;
+          } else {
+            output = "Time samajh nahi aaya. Please specify time clearly (e.g., 'kal subah 9 baje').";
+          }
+        } catch (err: any) {
+          console.error("[TaskScheduler] Error:", err.message);
+          output = `Scheduling error: ${err.message}`;
+        }
+        toolsUsed.push({ tool: "task_scheduler", input: task.instruction.substring(0, 50) });
         break;
       }
 
