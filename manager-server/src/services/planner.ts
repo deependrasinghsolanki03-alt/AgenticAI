@@ -476,12 +476,19 @@ Extract scheduling details from the instruction. Output JSON:
 Rules:
 - "kal" = tomorrow, "parso" = day after tomorrow
 - "subah 9 baje" = 09:00, "shaam 5 baje" = 17:00, "raat 10 baje" = 22:00
+- "har X min" / "every X minutes" → repeat_pattern = "every X minutes", scheduled_time = NOW + X minutes
+- "har X ghante" / "every X hours" → repeat_pattern = "every X hours"
 - "roz" / "daily" / "har din" → repeat_pattern = "daily"
 - "weekly" / "har hafte" → repeat_pattern = "weekly"
 - "monthly" / "har mahine" → repeat_pattern = "monthly"
+- "hourly" / "har ghante" → repeat_pattern = "hourly"
 - "5 din tak" / "for 5 days" → max_runs = 5
+- "1 hr tak" / "1 ghante tak" with "har 2 min" → max_runs = 60/2 = 30
+- "30 min tak" with "har 5 min" → max_runs = 30/5 = 6
+- Calculate max_runs from duration and interval when both are given
 - "hamesha" / "forever" → max_runs = null
-- If no specific time mentioned, default to 09:00 AM
+- If no specific time mentioned and task is for NOW, use current time + interval
+- If no time mentioned and task is for future, default to 09:00 AM
 - The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to girlfriend"), NOT the scheduling part
 - Use IST timezone (+05:30)
 Output ONLY valid JSON.`],
