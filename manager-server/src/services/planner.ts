@@ -121,9 +121,12 @@ RULE 8 — EVERYTHING ELSE:
 
 ═══ IMPORTANT NOTES ═══
 • Check CONTEXT first — if user says "girlfriend" and context has her email, USE that email in instruction
-• NEVER invent/guess email addresses — only use emails found in context
+• NEVER invent/guess email addresses — only use emails found in context or user message
+• NEVER assume relationships — if user gives an email, don't assume it's girlfriend/boyfriend/wife/husband
+• Only use words like "girlfriend", "love", "babe", "sweet" in instruction IF user EXPLICITLY said "GF", "girlfriend", "bf", "boyfriend"
+• If user just says "X@gmail.com ko email karo" → instruction = "Send email to X@gmail.com" (NO romantic words)
+• Keep instructions EXACTLY matching what user asked — don't add extra tone/style unless requested
 • When chaining tasks (research → calendar), use depends_on
-• Keep instructions SPECIFIC — include names, emails, times from context
 • Match user's language in instructions (Hindi → Hindi, English → English)
 
 ═══ EXAMPLES ═══
@@ -131,20 +134,23 @@ RULE 8 — EVERYTHING ELSE:
 "hello" / "hi" / "kya haal hai"
 {{"tasks":[{{"id":"t1","agent":"direct","instruction":"Greet the user warmly","depends_on":[]}}]}}
 
-"meri girlfriend ka email purpleberry1319@gmail.com hai"
-{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Acknowledge girlfriend's email is purpleberry1319@gmail.com, noted","depends_on":[]}}]}}
+"meri girlfriend ka email abc@gmail.com hai"
+{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Acknowledge girlfriend's email is abc@gmail.com, noted","depends_on":[]}}]}}
 
 "GF ko email bhejo" (context has gf email)
-{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send email to girlfriend at purpleberry1319@gmail.com","depends_on":[]}}]}}
+{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a loving email to girlfriend at abc@gmail.com","depends_on":[]}}]}}
 
-"kal subah 9 baje GF ko good morning email karo"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule for tomorrow 9 AM: Send a sweet, fresh good morning email to girlfriend at purpleberry1319@gmail.com","depends_on":[]}}]}}
+"abc@gmail.com ko good morning email karo" (user did NOT say GF)
+{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a good morning email to abc@gmail.com","depends_on":[]}}]}}
+
+"har 2 min mai 1 hr tak abc@gmail.com ko email karo" (user did NOT say GF)
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule every 2 minutes for 1 hour: Send a good morning email to abc@gmail.com","depends_on":[]}}]}}
+
+"kal subah 9 baje GF ko good morning email karo" (user SAID GF)
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend","depends_on":[]}}]}}
 
 "roz subah 8 baje study reminder email karo, 5 din tak"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule daily at 8 AM for 5 days: Send a fresh study reminder email with motivational message","depends_on":[]}}]}}
-
-"har 2 min mai 1 hr tak email karo"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule every 2 minutes for 1 hour: Send a fresh good morning email to deependrasinghsolanki45@gmail.com","depends_on":[]}}]}}
+{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule daily at 8 AM for 5 days: Send a study reminder email with motivational message","depends_on":[]}}]}}
 
 "tasks cancel karo" / "scheduled tasks band karo"
 {{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Cancel all pending scheduled tasks","depends_on":[]}}]}}
@@ -157,9 +163,6 @@ RULE 8 — EVERYTHING ELSE:
 
 "React topics nikalo aur calendar mein add karo 3-4 PM"
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
-
-"React topics nikalo, calendar mein add karo, aur study plan email karo"
-{{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for topics, 3-4 PM daily","depends_on":["t1"]}},{{"id":"t3","agent":"emailer","instruction":"Send study plan email with all topics and schedule to user","depends_on":["t1","t2"]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
   ["human", "{input}"],
@@ -696,15 +699,19 @@ Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"H
 2. Use the SAME LANGUAGE the user chats in. If user speaks Hinglish → write Hinglish email. If English → English.
 3. Keep it SHORT and natural. No corporate jargon like "I hope this email finds you well"
 4. Sign off with the sender's name: "{sender_name}"
-5. If sending to girlfriend/friend → be casual and sweet
-6. If sending study plan/work → be clear but still friendly
-7. Include ALL actual data from previous tasks — topic names, event details, links etc.
+5. TONE RULES (VERY IMPORTANT):
+   - If instruction contains "girlfriend", "GF", "boyfriend", "BF", "love", "babe" → write romantic/sweet email
+   - If instruction is just "send email to X@gmail.com" or "good morning email" → write FRIENDLY but NOT romantic. No "hey love", "baby", "jaanu" etc.
+   - If instruction mentions study/work → be clear and motivational
+   - DEFAULT tone = friendly and casual, NOT romantic
+6. Include ALL actual data from previous tasks — topic names, event details, links etc.
 
 🚨 NEVER:
 - Use placeholder emails like girlfriend@example.com
 - Use placeholder text like [previous task 1], [topic name]
 - Write robotic AI-sounding text
 - Write overly formal corporate emails
+- Assume someone is a girlfriend/boyfriend unless the instruction EXPLICITLY says so
 
 Known recipient email: {context_email}
 
