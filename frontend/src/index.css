@@ -835,7 +835,24 @@ button {
   font-size: 0.875rem;
   line-height: 1.65;
   word-wrap: break-word;
-  white-space: pre-wrap;
+}
+
+.message-content strong {
+  font-weight: 700;
+  color: inherit;
+}
+
+.message-content em {
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.message-content code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8rem;
 }
 
 .message-assistant .message-content {

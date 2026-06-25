@@ -5,6 +5,26 @@ import MinionCharacter from '../components/MinionCharacter';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+// Simple markdown renderer for chat messages
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = text
+    // Escape HTML first
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    // Bold: **text** or __text__
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    // Italic: *text* or _text_
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Code: `text`
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Line breaks
+    .replace(/\n/g, '<br/>');
+  return html;
+}
+
 export default function Chat() {
   const { user, signOut } = useAuth();
   const [messages, setMessages] = useState([]);
@@ -480,7 +500,7 @@ export default function Chat() {
                 </div>
               )}
               <div className="message-body">
-                <div className="message-content">{msg.content}</div>
+                <div className="message-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
                 <span className="message-time">{formatTime(msg.timestamp)}</span>
               </div>
               {msg.role === 'user' && (
