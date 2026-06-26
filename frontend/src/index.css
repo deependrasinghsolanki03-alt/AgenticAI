@@ -984,6 +984,16 @@ button {
   font-size: 0.8rem;
 }
 
+.message-content .md-h2 { font-size: 1.1rem; font-weight: 700; margin: 8px 0 4px; color: inherit; }
+.message-content .md-h3 { font-size: 1rem; font-weight: 600; margin: 6px 0 3px; color: inherit; }
+.message-content .md-h4 { font-size: 0.9rem; font-weight: 600; margin: 4px 0 2px; color: inherit; }
+.message-content .md-p { margin: 2px 0; }
+.message-content .md-hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0; }
+.message-content .md-list { margin: 4px 0; padding-left: 20px; }
+.message-content .md-list li { margin: 2px 0; }
+.message-content a { color: #818cf8; text-decoration: underline; text-underline-offset: 2px; }
+.message-content a:hover { color: #a5b4fc; }
+
 .message-assistant .message-content {
   background: var(--bg-tertiary);
   border: 1px solid var(--surface-border);

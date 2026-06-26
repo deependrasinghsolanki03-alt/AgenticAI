@@ -5,25 +5,61 @@ import MinionCharacter from '../components/MinionCharacter';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// Simple markdown renderer for chat messages
+// Enhanced markdown renderer for chat messages
 function renderMarkdown(text) {
   if (!text) return '';
-  let html = text
-    // Escape HTML first
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Bold: **text** or __text__
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    // Italic: *text* or _text_
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Code: `text`
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Line breaks
-    .replace(/\n/g, '<br/>');
+  // Process line by line for block elements
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false;
+  let listType = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    // Escape HTML
+    line = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Headers
+    if (line.match(/^### /)) { line = '<h4 class="md-h4">' + line.slice(4) + '</h4>'; }
+    else if (line.match(/^## /)) { line = '<h3 class="md-h3">' + line.slice(3) + '</h3>'; }
+    else if (line.match(/^# /)) { line = '<h2 class="md-h2">' + line.slice(2) + '</h2>'; }
+    // Horizontal rule
+    else if (line.match(/^---+$/)) { line = '<hr class="md-hr"/>'; }
+    // Bullet list
+    else if (line.match(/^[\s]*[-*•]\s/)) {
+      const content = line.replace(/^[\s]*[-*•]\s/, '');
+      if (!inList || listType !== 'ul') { if (inList) html += `</${listType}>`; html += '<ul class="md-list">'; inList = true; listType = 'ul'; }
+      line = '<li>' + applyInline(content) + '</li>';
+      html += line; continue;
+    }
+    // Numbered list
+    else if (line.match(/^\s*\d+[.)]\s/)) {
+      const content = line.replace(/^\s*\d+[.)]\s/, '');
+      if (!inList || listType !== 'ol') { if (inList) html += `</${listType}>`; html += '<ol class="md-list">'; inList = true; listType = 'ol'; }
+      line = '<li>' + applyInline(content) + '</li>';
+      html += line; continue;
+    }
+    else {
+      if (inList) { html += `</${listType}>`; inList = false; listType = ''; }
+      if (line.trim() === '') { line = '<br/>'; }
+      else { line = '<p class="md-p">' + applyInline(line) + '</p>'; }
+    }
+    html += line;
+  }
+  if (inList) html += `</${listType}>`;
   return html;
 }
+
+// Inline formatting: bold, italic, code, links
+function applyInline(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+
 
 export default function Chat() {
   const { user, signOut } = useAuth();
