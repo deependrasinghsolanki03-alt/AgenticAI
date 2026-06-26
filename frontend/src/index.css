@@ -727,11 +727,14 @@ button {
 }
 
 .task-instruction {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--text-primary);
   font-weight: 500;
   line-height: 1.4;
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-cancel-btn {

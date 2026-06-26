@@ -20,13 +20,19 @@ export async function listMemories(req: Request, res: Response): Promise<void> {
     if (error) throw error;
 
     // Format: extract a short preview from each log
-    const memories = (data || []).map(m => ({
-      id: m.id,
-      preview: m.log_text.substring(0, 150).replace(/\n/g, " "),
-      full_text: m.log_text,
-      created_at: m.created_at,
-      session_id: m.session_id,
-    }));
+    const memories = (data || []).map(m => {
+      let previewText = m.log_text.replace(/\n/g, " ").trim();
+      if (previewText.length > 50) {
+        previewText = previewText.substring(0, 50) + "...";
+      }
+      return {
+        id: m.id,
+        preview: previewText,
+        full_text: m.log_text,
+        created_at: m.created_at,
+        session_id: m.session_id,
+      };
+    });
 
     res.json({ memories });
   } catch (err: any) {
