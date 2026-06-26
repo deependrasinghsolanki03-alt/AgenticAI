@@ -36,6 +36,8 @@ export default function Chat() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [scheduledTasks, setScheduledTasks] = useState([]);
   const [showTasks, setShowTasks] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -86,6 +88,36 @@ export default function Chat() {
     } catch (err) {
       console.error('Failed to cancel task:', err);
     }
+  };
+
+  // Voice Input (Web Speech API)
+  const toggleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      alert('Voice input is not supported in your browser. Try Chrome.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'hi-IN';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map(result => result[0].transcript)
+        .join('');
+      setInput(transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
   // Helper: get auth token
@@ -621,6 +653,23 @@ export default function Chat() {
               disabled={isLoading}
               id="chat-input"
             />
+            <button
+              className={`btn-mic ${isListening ? 'btn-mic-active' : ''}`}
+              onClick={toggleVoiceInput}
+              disabled={isLoading}
+              title={isListening ? 'Stop listening' : 'Voice input'}
+              id="mic-button"
+            >
+              {isListening ? (
+                <span className="mic-pulse" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M12 19v4M8 23h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </button>
             <button
               className="btn-send"
               onClick={sendMessage}
