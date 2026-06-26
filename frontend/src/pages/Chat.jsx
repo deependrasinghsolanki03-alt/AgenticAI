@@ -72,6 +72,8 @@ export default function Chat() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [scheduledTasks, setScheduledTasks] = useState([]);
   const [showTasks, setShowTasks] = useState(false);
+  const [memories, setMemories] = useState([]);
+  const [showMemories, setShowMemories] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -123,6 +125,40 @@ export default function Chat() {
       }
     } catch (err) {
       console.error('Failed to cancel task:', err);
+    }
+  };
+
+  // Fetch memories
+  const fetchMemories = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/memories?limit=30`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { memories: mems } = await res.json();
+        setMemories(mems || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch memories:', err);
+    }
+  };
+
+  // Delete a memory
+  const deleteMemory = async (memId) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/memories/${memId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setMemories(prev => prev.filter(m => m.id !== memId));
+      }
+    } catch (err) {
+      console.error('Failed to delete memory:', err);
     }
   };
 
@@ -572,6 +608,45 @@ export default function Chat() {
                       <span>⏰ {new Date(task.scheduled_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}</span>
                       {task.repeat_pattern && <span>🔄 {task.repeat_pattern}</span>}
                       {task.max_runs && <span>🔢 {task.run_count || 0}/{task.max_runs} runs</span>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Memory Brain Panel */}
+        <div className="tasks-section">
+          <button className="tasks-toggle" onClick={() => { setShowMemories(!showMemories); if (!showMemories) fetchMemories(); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" opacity="0.7"/>
+            </svg>
+            Brain (Memories)
+            {memories.length > 0 && (
+              <span className="tasks-badge">{memories.length}</span>
+            )}
+            <svg className={`tasks-chevron ${showMemories ? 'tasks-chevron-open' : ''}`} width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+          {showMemories && (
+            <div className="tasks-list">
+              {memories.length === 0 ? (
+                <div className="tasks-empty">No memories stored yet</div>
+              ) : (
+                memories.map((mem) => (
+                  <div key={mem.id} className="task-card">
+                    <div className="task-card-header">
+                      <span className="task-instruction">{mem.preview}</span>
+                      <button className="task-cancel-btn" onClick={() => deleteMemory(mem.id)} title="Delete memory">
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="task-card-details">
+                      <span>{new Date(mem.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}</span>
                     </div>
                   </div>
                 ))

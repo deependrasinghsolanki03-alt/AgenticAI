@@ -7,6 +7,7 @@ import { handleChat } from "./controllers/chatController.js";
 import { handleEmbed } from "./controllers/embedController.js";
 import { loadChats, saveChat, clearChats, listSessions, createSession, updateSession, deleteSession } from "./controllers/chatHistoryController.js";
 import { listScheduledTasks, cancelScheduledTask } from "./controllers/taskController.js";
+import { listMemories, deleteMemory } from "./controllers/memoryController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
 import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
@@ -62,6 +63,10 @@ app.delete("/api/chats", verifyAuth, clearChats);
 // Scheduled Tasks
 app.get("/api/tasks", verifyAuth, listScheduledTasks);
 app.delete("/api/tasks/:id", verifyAuth, cancelScheduledTask);
+
+// Memories
+app.get("/api/memories", verifyAuth, listMemories);
+app.delete("/api/memories/:id", verifyAuth, deleteMemory);
 
 // Scheduler Tick — called by cron-job.org (protected by secret)
 // Responds INSTANTLY, processes tasks in background (fits 30s timeout)
