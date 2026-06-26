@@ -74,6 +74,7 @@ export default function Chat() {
   const [showTasks, setShowTasks] = useState(false);
   const [memories, setMemories] = useState([]);
   const [showMemories, setShowMemories] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -159,6 +160,53 @@ export default function Chat() {
       }
     } catch (err) {
       console.error('Failed to delete memory:', err);
+    }
+  };
+
+  // HITL: Approve a pending action
+  const approveAction = async (actionId) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/actions/${actionId}/approve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setPendingConfirm(null);
+      const statusMsg = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `✅ **Action Approved!** ${data.result || 'Email sent successfully.'}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, statusMsg]);
+      saveMessageToDB('assistant', statusMsg.content);
+    } catch (err) {
+      console.error('Approve failed:', err);
+    }
+  };
+
+  // HITL: Reject a pending action
+  const rejectAction = async (actionId) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await fetch(`${API_URL}/api/actions/${actionId}/reject`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPendingConfirm(null);
+      const statusMsg = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '❌ **Action Rejected.** The email was not sent.',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, statusMsg]);
+      saveMessageToDB('assistant', statusMsg.content);
+    } catch (err) {
+      console.error('Reject failed:', err);
     }
   };
 
@@ -434,6 +482,9 @@ export default function Chat() {
             setAgentStatus(payload.detail || 'Processing...');
           } else if (eventType === 'tool') {
             setAgentStatus(`Running Tool: ${payload.name || 'unknown'}`);
+          } else if (eventType === 'confirm') {
+            // HITL: Store pending action for confirmation card
+            setPendingConfirm({ action_id: payload.action_id, tool: payload.tool, args: payload.args });
           } else if (eventType === 'done') {
             const assistantMessage = {
               id: crypto.randomUUID(),
@@ -744,6 +795,30 @@ export default function Chat() {
             <div className="message message-assistant">
               <div className="message-body" style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
                 <MinionCharacter status={agentStatus} isActive={isLoading} />
+              </div>
+            </div>
+          )}
+
+          {/* HITL Confirmation Card */}
+          {pendingConfirm && (
+            <div className="message message-assistant">
+              <div className="message-body">
+                <div className="confirm-card">
+                  <div className="confirm-header">⚠️ Confirmation Required</div>
+                  <div className="confirm-details">
+                    <span className="confirm-tool">{pendingConfirm.tool === 'gmail_send' ? '📧 Send Email' : pendingConfirm.tool}</span>
+                    {pendingConfirm.args?.to && <span>To: <strong>{pendingConfirm.args.to}</strong></span>}
+                    {pendingConfirm.args?.subject && <span>Subject: <strong>{pendingConfirm.args.subject}</strong></span>}
+                  </div>
+                  <div className="confirm-actions">
+                    <button className="confirm-btn confirm-approve" onClick={() => approveAction(pendingConfirm.action_id)}>
+                      ✅ Approve & Send
+                    </button>
+                    <button className="confirm-btn confirm-reject" onClick={() => rejectAction(pendingConfirm.action_id)}>
+                      ❌ Reject
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

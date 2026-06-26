@@ -33,7 +33,7 @@ function getDateStr(offset = 0): string {
 }
 
 // ── Types ───────────────────────────────────────
-export interface PlannerResult { output: string; toolsUsed: { tool: string; input: string }[]; }
+export interface PlannerResult { output: string; toolsUsed: { tool: string; input: string }[]; pendingActions?: { id: string; tool: string; args: Record<string, unknown> }[]; }
 export interface PlannerParams {
   userMessage: string; context: string; userId: string;
   userEmail?: string;
@@ -54,6 +54,7 @@ interface TaskResult {
   agent: string;
   output: string;
   toolsUsed: { tool: string; input: string }[];
+  pendingActions?: { id: string; tool: string; args: Record<string, unknown> }[];
 }
 
 
@@ -300,6 +301,7 @@ async function executeGraph(tasks: TaskNode[], params: PlannerParams): Promise<T
 // ── Execute a single task ──
 async function executeTask(task: TaskNode, depOutputs: Record<string, string>, params: PlannerParams): Promise<TaskResult> {
   const toolsUsed: { tool: string; input: string }[] = [];
+  let pendingActions: { id: string; tool: string; args: Record<string, unknown> }[] | undefined;
   let output = "";
 
   try {
@@ -400,7 +402,7 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         break;
       }
 
-      // ── EMAILER: 8B extracts params → Node.js calls Gmail API ──
+      // ── EMAILER: 8B extracts params → saves to pending_actions for HITL confirmation ──
       case "emailer": {
         params.onStatus?.(`Email: ${task.instruction.substring(0, 50)}...`);
         const gmailTool = createGmailTool(params.googleAuthClient);
@@ -412,11 +414,28 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
-            const sendResult = await gmailTool.invoke({ action: "send", to: emailParams.to, subject: emailParams.subject, body: emailParams.body });
-            // Show what was actually sent
-            const bodyPreview = emailParams.body.length > 300 ? emailParams.body.substring(0, 300) + "..." : emailParams.body;
-            output = `${sendResult}\n\n📧 **To:** ${emailParams.to}\n📌 **Subject:** ${emailParams.subject}\n\n**Message:**\n${bodyPreview}`;
-            toolsUsed.push({ tool: "gmail", input: `send to: ${emailParams.to}` });
+            // HITL: Save to pending_actions instead of sending directly
+            const { data: pendingRow, error: pendingErr } = await supabaseAdmin
+              .from("pending_actions")
+              .insert({
+                user_id: params.userId,
+                tool_name: "gmail_send",
+                arguments: { to: emailParams.to, subject: emailParams.subject, body: emailParams.body },
+                status: "pending",
+              })
+              .select("id")
+              .single();
+
+            if (pendingErr || !pendingRow) {
+              output = "Error: Could not save email for confirmation. Please try again.";
+            } else {
+              const bodyPreview = emailParams.body.length > 300 ? emailParams.body.substring(0, 300) + "..." : emailParams.body;
+              output = `⚠️ **Email Ready — Awaiting Your Approval**\n\n📧 **To:** ${emailParams.to}\n📌 **Subject:** ${emailParams.subject}\n\n**Message Preview:**\n${bodyPreview}\n\n*Click ✅ Approve or ❌ Reject below.*`;
+              toolsUsed.push({ tool: "gmail", input: `pending confirmation: ${emailParams.to}` });
+              // Store pending action info for SSE event
+              if (!pendingActions) pendingActions = [];
+              pendingActions.push({ id: pendingRow.id, tool: "gmail_send", args: { to: emailParams.to, subject: emailParams.subject, body: emailParams.body } });
+            }
           }
         } else {
           const query = extractSearchQuery(task.instruction);
@@ -618,7 +637,7 @@ Output ONLY valid JSON.`],
   }
 
   console.log(`[Executor] ✅ ${task.id}(${task.agent}) done (${output.length} chars)`);
-  return { id: task.id, agent: task.agent, output, toolsUsed };
+  return { id: task.id, agent: task.agent, output, toolsUsed, pendingActions };
 }
 
 
@@ -869,8 +888,11 @@ export async function runPlanner(params: PlannerParams): Promise<PlannerResult> 
   // Collect all tools used
   const toolsUsed = results.flatMap(r => r.toolsUsed);
 
-  const elapsed = Date.now() - startTime;
-  console.log(`\n[Pipeline] ✅ Done in ${(elapsed / 1000).toFixed(1)}s | Tasks: ${tasks.map(t => t.id + "(" + t.agent + ")").join(", ")} | Tools: ${toolsUsed.map(t => t.tool).join(", ")}\n`);
+  // Collect all pending actions (HITL)
+  const pendingActions = results.flatMap(r => r.pendingActions || []);
 
-  return { output, toolsUsed };
+  const elapsed = Date.now() - startTime;
+  console.log(`\n[Pipeline] ✅ Done in ${(elapsed / 1000).toFixed(1)}s | Tasks: ${tasks.map(t => t.id + "(" + t.agent + ")").join(", ")} | Tools: ${toolsUsed.map(t => t.tool).join(", ")}${pendingActions.length ? ` | Pending: ${pendingActions.length}` : ""}\n`);
+
+  return { output, toolsUsed, pendingActions: pendingActions.length > 0 ? pendingActions : undefined };
 }

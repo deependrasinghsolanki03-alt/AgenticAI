@@ -94,6 +94,13 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
       for (const tool of plannerResult.toolsUsed) sendEvent(res, "tool", { name: tool.tool, input: tool.input });
     }
 
+    // Emit confirmation events for HITL pending actions
+    if (plannerResult.pendingActions && plannerResult.pendingActions.length > 0) {
+      for (const action of plannerResult.pendingActions) {
+        sendEvent(res, "confirm", { action_id: action.id, tool: action.tool, args: action.args });
+      }
+    }
+
     // Send response IMMEDIATELY
     sendEvent(res, "done", { response: plannerResult.output, tools_used: plannerResult.toolsUsed, elapsed_ms: Date.now() - startTime });
 
