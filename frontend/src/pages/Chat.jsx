@@ -34,6 +34,8 @@ export default function Chat() {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [scheduledTasks, setScheduledTasks] = useState([]);
+  const [showTasks, setShowTasks] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -46,6 +48,45 @@ export default function Chat() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Fetch scheduled tasks
+  const fetchScheduledTasks = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/tasks?status=pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { tasks } = await res.json();
+        setScheduledTasks(tasks || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch tasks:', err);
+    }
+  };
+
+  // Load tasks on mount
+  useEffect(() => {
+    if (user) fetchScheduledTasks();
+  }, [user]);
+
+  // Cancel a scheduled task
+  const cancelTask = async (taskId) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setScheduledTasks(prev => prev.filter(t => t.id !== taskId));
+      }
+    } catch (err) {
+      console.error('Failed to cancel task:', err);
+    }
+  };
 
   // Helper: get auth token
   const getToken = async () => {
@@ -327,6 +368,8 @@ export default function Chat() {
       setIsLoading(false);
       setAgentStatus('');
       inputRef.current?.focus();
+      // Refresh tasks panel (in case a task was just scheduled/cancelled)
+      fetchScheduledTasks();
     }
   };
 
@@ -425,6 +468,48 @@ export default function Chat() {
               </button>
             </div>
           ))}
+        </div>
+
+        {/* Scheduled Tasks Panel */}
+        <div className="tasks-section">
+          <button className="tasks-toggle" onClick={() => { setShowTasks(!showTasks); if (!showTasks) fetchScheduledTasks(); }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 1v6l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            </svg>
+            Scheduled Tasks
+            {scheduledTasks.length > 0 && (
+              <span className="tasks-badge">{scheduledTasks.length}</span>
+            )}
+            <svg className={`tasks-chevron ${showTasks ? 'tasks-chevron-open' : ''}`} width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+          {showTasks && (
+            <div className="tasks-list">
+              {scheduledTasks.length === 0 ? (
+                <div className="tasks-empty">No scheduled tasks</div>
+              ) : (
+                scheduledTasks.map((task) => (
+                  <div key={task.id} className="task-card">
+                    <div className="task-card-header">
+                      <span className="task-instruction">{task.instruction.length > 50 ? task.instruction.substring(0, 50) + '...' : task.instruction}</span>
+                      <button className="task-cancel-btn" onClick={() => cancelTask(task.id)} title="Cancel task">
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="task-card-details">
+                      <span>⏰ {new Date(task.scheduled_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}</span>
+                      {task.repeat_pattern && <span>🔄 {task.repeat_pattern}</span>}
+                      {task.max_runs && <span>🔢 {task.run_count || 0}/{task.max_runs} runs</span>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         <div className="sidebar-spacer" />
