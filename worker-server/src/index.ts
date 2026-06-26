@@ -7,6 +7,7 @@ import express from "express";
 import cors from "cors";
 import { internalAuth } from "./middleware/internalAuth.js";
 import { handleDelegate } from "./controllers/delegateController.js";
+import { handleScrape } from "./controllers/scrapeController.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
 
 const app = express();
@@ -38,6 +39,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.post("/api/delegate", internalAuth, handleDelegate);
+app.get("/api/scrape", internalAuth, handleScrape);
 
 app.get("/", (_req, res) => {
   res.json({

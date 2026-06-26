@@ -16,6 +16,7 @@ import { createCalendarTool } from "../tools/calendarTool.js";
 import { createGmailTool } from "../tools/gmailTool.js";
 import { createMemoryTool } from "../tools/memoryTool.js";
 import { createWorkerTool } from "../tools/workerTool.js";
+import { createScraperTool } from "../tools/scraperTool.js";
 import { getNextKey } from "../utils/keyRotator.js";
 import { supabaseAdmin } from "../config/supabase.js";
 
@@ -44,7 +45,7 @@ export interface PlannerParams {
 
 interface TaskNode {
   id: string;
-  agent: "researcher" | "scheduler" | "emailer" | "memory" | "direct" | "task_scheduler";
+  agent: "researcher" | "scheduler" | "emailer" | "memory" | "direct" | "task_scheduler" | "scraper";
   instruction: string;
   depends_on: string[];
 }
@@ -76,6 +77,7 @@ Your ONLY job: Convert the user's request into a JSON task graph.
 4. "emailer"         → Gmail: send or search email (IMMEDIATE email actions only — no future time)
 5. "memory"          → Search past conversations/memories (ONLY when user asks "do you remember", "pehle kya bola tha")
 6. "task_scheduler"  → FUTURE or RECURRING tasks: schedule something for later, list scheduled tasks, cancel tasks
+7. "scraper"         → Read/extract content from a specific URL. Use when user shares a link and wants to know what's on the page
 
 ═══ OUTPUT FORMAT ═══
 {{"tasks":[{{"id":"t1","agent":"AGENT_NAME","instruction":"Clear instruction for this agent","depends_on":[]}}]}}
@@ -441,6 +443,20 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
           const query = extractSearchQuery(task.instruction);
           output = await gmailTool.invoke({ action: "search", query: query || "is:unread" });
           toolsUsed.push({ tool: "gmail", input: `search: ${query}` });
+        }
+        break;
+      }
+
+      // ── SCRAPER: Extract content from a specific URL ──
+      case "scraper": {
+        params.onStatus?.(`Reading URL: ${task.instruction.substring(0, 50)}...`);
+        const urlMatch = task.instruction.match(/https?:\/\/[^\s"'<>]+/i);
+        if (urlMatch) {
+          const scraperTool = createScraperTool(params.onStatus);
+          output = await scraperTool.invoke({ url: urlMatch[0] });
+          toolsUsed.push({ tool: "url_scraper", input: urlMatch[0] });
+        } else {
+          output = "No URL found in the instruction. Please provide a valid URL.";
         }
         break;
       }
