@@ -538,6 +538,13 @@ SCHEDULED TIME RULES (VERY IMPORTANT):
 - NEVER default to 09:00 AM when user wants something to start immediately (no "kal"/"tomorrow" mentioned)
 - If "har 2 min mai 1 hr tak" → scheduled_time = NOW (current time), repeat = every 2 minutes, max_runs = 30
 
+CRITICAL — "at X time for Y days" pattern:
+- "9 am for 2 days" → scheduled_time = NEXT 9 AM (if today's 9 AM passed, use TOMORROW's 9 AM), repeat_pattern = "daily", max_runs = 2
+- "at 8 pm for 3 days" → scheduled_time = NEXT 8 PM, repeat_pattern = "daily", max_runs = 3
+- "for X days" / "X din tak" ALWAYS means repeat_pattern = "daily" and max_runs = X
+- scheduled_time should be the FIRST run time (NEXT occurrence of that time, NOT X days from now)
+- Today is {today}, current time is {current_time}. If the specified time has ALREADY PASSED today, start from TOMORROW.
+
 - The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to user@gmail.com"), NOT the scheduling part
 - Use IST timezone (+05:30)
 - For current time, use: {current_time}
