@@ -1018,10 +1018,42 @@ button {
   color: var(--error-text);
 }
 
+.message-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .message-time {
   font-size: 0.688rem;
   color: var(--text-muted);
   padding: 0 4px;
+}
+
+.btn-speak {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  opacity: 0.4;
+  transition: all 0.2s;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.btn-speak:hover {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.btn-speak-active {
+  opacity: 1;
+  animation: pulse-speak 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-speak {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
 }
 
 /* Loading / Agent Status */

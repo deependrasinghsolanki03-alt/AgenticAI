@@ -78,9 +78,43 @@ export default function Chat() {
   const [thinkingSteps, setThinkingSteps] = useState([]);
   const [showThinking, setShowThinking] = useState(true);
   const [isListening, setIsListening] = useState(false);
+  const [speakingId, setSpeakingId] = useState(null);
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Text-to-Speech
+  const speakText = (msgId, text) => {
+    if (speakingId === msgId) {
+      speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+    speechSynthesis.cancel();
+    // Strip markdown symbols for clean speech
+    const clean = text
+      .replace(/```[\s\S]*?```/g, 'code block')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/#{1,6}\s/g, '')
+      .replace(/[\[\]\(\)]/g, '')
+      .replace(/---/g, '')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\n+/g, '. ')
+      .trim();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'hi-IN'; // Hindi-friendly
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    // Try to find a Hindi voice, fallback to default
+    const voices = speechSynthesis.getVoices();
+    const hindiVoice = voices.find(v => v.lang.startsWith('hi'));
+    if (hindiVoice) utterance.voice = hindiVoice;
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+    setSpeakingId(msgId);
+    speechSynthesis.speak(utterance);
+  };
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -790,7 +824,18 @@ export default function Chat() {
               )}
               <div className="message-body">
                 <div className="message-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                <span className="message-time">{formatTime(msg.timestamp)}</span>
+                <div className="message-footer">
+                  <span className="message-time">{formatTime(msg.timestamp)}</span>
+                  {msg.role === 'assistant' && !msg.isError && (
+                    <button
+                      className={`btn-speak ${speakingId === msg.id ? 'btn-speak-active' : ''}`}
+                      onClick={() => speakText(msg.id, msg.content)}
+                      title={speakingId === msg.id ? 'Stop speaking' : 'Read aloud'}
+                    >
+                      {speakingId === msg.id ? '⏹️' : '🔊'}
+                    </button>
+                  )}
+                </div>
               </div>
               {msg.role === 'user' && (
                 <div className="message-avatar user-avatar">
