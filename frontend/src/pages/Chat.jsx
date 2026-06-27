@@ -600,6 +600,13 @@ export default function Chat() {
         }
       }
     } catch (err) {
+      // Auto-fallback to WebSocket if SSE fails
+      if (wsConnected && !useWebSocket && (err.message?.includes('fetch') || err.message?.includes('network') || err.message?.includes('Failed'))) {
+        console.log('[Chat] SSE failed, auto-switching to WebSocket...');
+        setUseWebSocket(true);
+        setAgentStatus('Reconnecting via WebSocket...');
+        // Retry will happen on next send
+      }
       const errorMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -846,16 +853,6 @@ export default function Chat() {
               <span className="status-dot" />
               Online
             </span>
-          </div>
-          <div className="ws-toggle-area">
-            <button
-              className={`ws-toggle ${useWebSocket ? 'ws-toggle-active' : ''}`}
-              onClick={() => setUseWebSocket(!useWebSocket)}
-              title={useWebSocket ? 'Using WebSocket (click for SSE)' : 'Using SSE (click for WebSocket)'}
-            >
-              {useWebSocket ? '🌐 WS' : '📡 SSE'}
-              <span className={`ws-dot ${useWebSocket && wsConnected ? 'ws-dot-connected' : ''}`} />
-            </button>
           </div>
         </header>
 
