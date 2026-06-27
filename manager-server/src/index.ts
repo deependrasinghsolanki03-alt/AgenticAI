@@ -2,6 +2,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { verifyAuth } from "./middleware/auth.js";
 import { handleChat } from "./controllers/chatController.js";
 import { handleEmbed } from "./controllers/embedController.js";
@@ -13,6 +14,24 @@ import { initEmbeddingModel } from "./services/embedding.js";
 import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
+
+// Rate Limiters
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 15,
+  message: { error: "⏳ Too many requests! Please wait a minute before sending more messages." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req as any).user_id || req.ip || "unknown",
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: "⏳ Rate limit reached. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
@@ -45,7 +64,9 @@ app.post("/api/auth/save-tokens", verifyAuth, async (req, res) => {
 });
 
 // Chat (SSE)
-app.post("/api/chat", verifyAuth, handleChat);
+// Apply rate limiters
+app.use("/api/", apiLimiter);
+app.post("/api/chat", verifyAuth, chatLimiter, handleChat);
 
 // Internal Embed API (for Worker Server)
 app.post("/api/embed", handleEmbed);
