@@ -6,6 +6,7 @@ import { pineconeIndex } from "../config/pinecone.js";
 import { getEmbeddingModel } from "../services/embedding.js";
 import { getGoogleAuthClient } from "../config/googleAuth.js";
 import { runPlanner } from "../services/planner.js";
+import { extractFacts } from "../services/factExtractor.js";
 
 function sendEvent(res: Response, event: string, data: Record<string, unknown>) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -104,14 +105,19 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     // Send response IMMEDIATELY
     sendEvent(res, "done", { response: plannerResult.output, tools_used: plannerResult.toolsUsed, elapsed_ms: Date.now() - startTime });
 
-    // Memory write-back (after response)
-    const logText = `User: ${userMessage}\nAssistant: ${plannerResult.output}`;
+    // Fact-Based Memory write-back (after response)
     try {
-      const { data: savedLog, error: saveError } = await supabaseAdmin.from("memory_logs").insert({ user_id: userId, log_text: logText, session_id: session_id || null }).select("id").single();
-      if (!saveError && savedLog?.id) {
-        const store = await PineconeStore.fromExistingIndex(embeddings, { pineconeIndex, namespace: userId });
-        await store.addDocuments([{ pageContent: logText, metadata: { log_id: savedLog.id, user_id: userId, session_id: session_id || "", timestamp: new Date().toISOString() } }], { ids: [savedLog.id] });
-        console.log(`[Memory] Saved: ${savedLog.id}`);
+      const facts = await extractFacts(userMessage, plannerResult.output);
+      if (facts) {
+        // Save extracted facts (not raw chat)
+        const { data: savedLog, error: saveError } = await supabaseAdmin.from("memory_logs").insert({ user_id: userId, log_text: facts, session_id: session_id || null }).select("id").single();
+        if (!saveError && savedLog?.id) {
+          const store = await PineconeStore.fromExistingIndex(embeddings, { pineconeIndex, namespace: userId });
+          await store.addDocuments([{ pageContent: facts, metadata: { log_id: savedLog.id, user_id: userId, session_id: session_id || "", timestamp: new Date().toISOString() } }], { ids: [savedLog.id] });
+          console.log(`[Memory] Saved facts: ${savedLog.id} (${facts.length} chars)`);
+        }
+      } else {
+        console.log("[Memory] No facts to save — skipped.");
       }
     } catch (memErr: any) { console.error("[Memory] Error:", memErr.message); }
 
