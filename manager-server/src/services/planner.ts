@@ -764,10 +764,25 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
   const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
   console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
-  // Check if context has a COMMUNICATION STYLE PROFILE
-  const styleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:Sample messages for reference:[\s\S]*?)(?=\n===|$)/);
-  const styleGuide = styleMatch ? styleMatch[0] : "";
-  if (styleGuide) console.log(`[ParamExtractor:Email] ✅ Found style profile in context!`);
+  // Check if context has a COMMUNICATION STYLE PROFILE and if this email is for that contact
+  const styleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:ONLY use this style when writing to:[\s\S]*?)(?=\n===|$)/);
+  let styleGuide = "";
+  if (styleMatch) {
+    // Only apply style if the instruction mentions the relationship
+    const instrLower = instruction.toLowerCase();
+    const isForStyledContact = instrLower.includes("girlfriend") || instrLower.includes("gf") || 
+      instrLower.includes("boyfriend") || instrLower.includes("bf") ||
+      instrLower.includes("wife") || instrLower.includes("biwi") ||
+      instrLower.includes("husband") || instrLower.includes("love") ||
+      instrLower.includes("babe") || instrLower.includes("jaanu");
+    
+    if (isForStyledContact) {
+      styleGuide = styleMatch[0];
+      console.log(`[ParamExtractor:Email] ✅ Using personalized style for this contact!`);
+    } else {
+      console.log(`[ParamExtractor:Email] ℹ️ Style profile exists but this email is NOT for that contact. Using default style.`);
+    }
+  }
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", `You are writing an email AS the user (sender: "{sender_name}"). 

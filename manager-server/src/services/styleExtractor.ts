@@ -16,8 +16,7 @@ export interface StyleProfile {
   emojiStyle: string;         // Emoji usage description
   language: string;           // "Hindi", "English", "Hinglish", etc.
   tone: string;               // "romantic", "funny", "caring", etc.
-  sampleMessages: string[];   // 5-10 representative messages
-  rawSummary: string;         // Full LLM-generated style summary
+  rawSummary: string;         // Style summary (NO raw messages)
 }
 
 // WhatsApp chat line pattern: "27/06/2026, 9:15 am - Name: message"
@@ -126,7 +125,6 @@ Output ONLY valid JSON.`],
     emojiStyle: parsed.emoji_style || "moderate",
     language: parsed.language || "Hinglish",
     tone: parsed.tone || "casual",
-    sampleMessages: sample.slice(0, 10),
     rawSummary: `COMMUNICATION STYLE PROFILE for ${relationship} (${contactName}):
 - Pet names: ${(parsed.pet_names || []).join(", ")}
 - Language: ${parsed.language || "Hinglish"}
@@ -137,9 +135,7 @@ Output ONLY valid JSON.`],
 - Emoji style: ${parsed.emoji_style || "moderate"}
 - Common phrases: ${(parsed.common_phrases || []).join(", ")}
 - Style guide: ${parsed.style_summary || "Write casually and warmly."}
-
-Sample messages for reference:
-${sample.slice(0, 8).map(m => `> ${m}`).join("\n")}`,
+- ONLY use this style when writing to: ${contactName} (${relationship})`,
   };
 
   console.log(`[StyleExtractor] ✅ Profile created: ${profile.language} / ${profile.tone} / ${profile.petNames.length} pet names`);
