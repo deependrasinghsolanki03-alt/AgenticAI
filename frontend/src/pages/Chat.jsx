@@ -75,6 +75,8 @@ export default function Chat() {
   const [memories, setMemories] = useState([]);
   const [showMemories, setShowMemories] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState(null);
+  const [thinkingSteps, setThinkingSteps] = useState([]);
+  const [showThinking, setShowThinking] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -412,6 +414,7 @@ export default function Chat() {
     setInput('');
     saveMessageToDB('user', trimmed);
     setIsLoading(true);
+    setThinkingSteps([]);
     setAgentStatus('Thinking...');
 
     try {
@@ -480,22 +483,29 @@ export default function Chat() {
 
           if (eventType === 'status') {
             setAgentStatus(payload.detail || 'Processing...');
+            const icon = payload.stage === 'memory' ? '🧠' : payload.stage === 'planning' ? '📋' : '🔍';
+            setThinkingSteps(prev => [...prev, { icon, text: payload.detail || 'Processing...', done: false }]);
           } else if (eventType === 'tool') {
             setAgentStatus(`Running Tool: ${payload.name || 'unknown'}`);
+            setThinkingSteps(prev => [...prev, { icon: '⚙️', text: `Tool: ${payload.name}`, done: false }]);
           } else if (eventType === 'confirm') {
             // HITL: Store pending action for confirmation card
             setPendingConfirm({ action_id: payload.action_id, tool: payload.tool, args: payload.args });
           } else if (eventType === 'done') {
+            // Mark all steps as done
+            setThinkingSteps(prev => prev.map(s => ({ ...s, done: true })));
             const assistantMessage = {
               id: crypto.randomUUID(),
               role: 'assistant',
               content: payload.response || 'No response received.',
               timestamp: new Date(),
+              thinkingSteps: thinkingSteps.length > 0 ? [...thinkingSteps.map(s => ({ ...s, done: true }))] : undefined,
             };
             setMessages((prev) => [...prev, assistantMessage]);
             saveMessageToDB('assistant', assistantMessage.content);
             setIsLoading(false);
             setAgentStatus('');
+            setTimeout(() => setThinkingSteps([]), 500);
           } else if (eventType === 'error') {
             const errorMessage = {
               id: crypto.randomUUID(),
@@ -789,6 +799,32 @@ export default function Chat() {
               )}
             </div>
           ))}
+
+          {/* Thinking Process Dropdown */}
+          {isLoading && thinkingSteps.length > 0 && (
+            <div className="message message-assistant">
+              <div className="message-body">
+                <div className="thinking-card">
+                  <button className="thinking-toggle" onClick={() => setShowThinking(!showThinking)}>
+                    <span className="thinking-pulse">🤔</span> Thinking...
+                    <svg className={`thinking-chevron ${showThinking ? 'thinking-chevron-open' : ''}`} width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                  {showThinking && (
+                    <div className="thinking-steps">
+                      {thinkingSteps.map((step, i) => (
+                        <div key={i} className={`thinking-step ${step.done ? 'thinking-step-done' : ''}`}>
+                          <span>{step.done ? '✅' : step.icon}</span>
+                          <span>{step.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Minion Loading Character */}
           {isLoading && (
