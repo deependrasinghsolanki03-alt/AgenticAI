@@ -20,9 +20,16 @@ import { createScraperTool } from "../tools/scraperTool.js";
 import { getNextKey } from "../utils/keyRotator.js";
 import { supabaseAdmin } from "../config/supabase.js";
 
+// ── Constants ───────────────────────────────────
+const LLM_MODEL = process.env.LLM_MODEL || "llama-3.1-8b-instant";
+const MAX_RETRIES = 2;
+const WAVE_DELAY_MS = 1500;
+const RATE_LIMIT_WAIT_MS = 15000;
+const RETRY_WAIT_MS = 2000;
+
 // ── Helpers ─────────────────────────────────────
 function create8B(maxTokens = 1024): ChatGroq {
-  return new ChatGroq({ model: "llama-3.1-8b-instant", apiKey: getNextKey(), temperature: 0.2, maxTokens });
+  return new ChatGroq({ model: LLM_MODEL, apiKey: getNextKey(), temperature: 0.2, maxTokens });
 }
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 function getToday(): string {
@@ -294,7 +301,7 @@ async function executeGraph(tasks: TaskNode[], params: PlannerParams): Promise<T
     }
 
     // Small delay between waves to avoid rate limits
-    if (completed.size < tasks.length) await sleep(1500);
+    if (completed.size < tasks.length) await sleep(WAVE_DELAY_MS);
   }
 
   return allResults;
@@ -306,8 +313,8 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
   let pendingActions: { id: string; tool: string; args: Record<string, unknown> }[] | undefined;
   let output = "";
 
-  const MAX_RETRIES = 2;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const MAX_TASK_RETRIES = MAX_RETRIES;
+  for (let attempt = 1; attempt <= MAX_TASK_RETRIES; attempt++) {
     try {
       switch (task.agent) {
       // ── RESEARCHER: Calls Worker Server (with 8B fallback) ──
@@ -514,7 +521,7 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         const timePrompt = ChatPromptTemplate.fromMessages([
           ["system", `Today is {today}. Current time in IST: {current_time}.
 Extract scheduling details from the instruction. Output JSON:
-{{"scheduled_time":"YYYY-MM-DDTHH:mm:ss+05:30","repeat_pattern":null,"max_runs":null,"instruction":"the actual task to execute"}}
+{{"scheduled_time":"YYYY-MM-DDTHH:mm:ss+05:30","repeat_pattern":null,"max_runs":null,"instruction":"the actual task to execute with REAL email addresses"}}
 
 Rules:
 - "kal" = tomorrow, "parso" = day after tomorrow
@@ -545,11 +552,18 @@ CRITICAL — "at X time for Y days" pattern:
 - scheduled_time should be the FIRST run time (NEXT occurrence of that time, NOT X days from now)
 - Today is {today}, current time is {current_time}. If the specified time has ALREADY PASSED today, start from TOMORROW.
 
-- The "instruction" should be the ACTUAL TASK to do (e.g., "Send good morning email to user@gmail.com"), NOT the scheduling part
+CRITICAL — RESOLVE REFERENCES FROM CONTEXT:
+- If user says "girlfriend", "GF", "bf", "mom", "boss" etc. → LOOK at the CONTEXT below to find their actual email address
+- The "instruction" MUST contain the REAL email address, NOT just "girlfriend" or "GF"
+- Example: If context says "girlfriend's email is abc@gmail.com" and user says "GF ko email karo" → instruction = "Send email to abc@gmail.com"
+- NEVER write "Send email to girlfriend" without including the actual email address
+- If you cannot find the email in context, write: "Send email to [unknown - ask user for email]"
+
+- The "instruction" should be the ACTUAL TASK with REAL details (emails, names) from context
 - Use IST timezone (+05:30)
 - For current time, use: {current_time}
 Output ONLY valid JSON.`],
-          ["human", `Instruction: {instruction}\nUser message: {user_msg}\n\nJSON:`],
+          ["human", `Instruction: {instruction}\nUser message: {user_msg}\nContext (memory + recent chat): {context}\n\nJSON:`],
         ]);
 
         try {
@@ -560,6 +574,7 @@ Output ONLY valid JSON.`],
             current_time: currentTime,
             instruction: task.instruction,
             user_msg: params.userMessage,
+            context: (params.context || "").substring(0, 1500),
           });
           const raw = typeof result.content === "string" ? result.content : "";
           console.log("[TaskScheduler] Raw:", raw.substring(0, 300));
@@ -657,23 +672,23 @@ Output ONLY valid JSON.`],
       const isAuthError = err.message?.includes("401") || err.message?.includes("invalid_grant") || err.message?.includes("Token has been expired");
       const isRateLimit = err.message?.includes("429");
 
-      if (isAuthError || attempt === MAX_RETRIES) {
+      if (isAuthError || attempt === MAX_TASK_RETRIES) {
         // Don't retry auth errors or last attempt
-        console.error(`[Executor] ❌ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_RETRIES}):`, err.message);
+        console.error(`[Executor] ❌ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_TASK_RETRIES}):`, err.message);
         output = isAuthError
           ? "⚠️ Authentication error — please re-login with Google to refresh permissions."
-          : `Error after ${MAX_RETRIES} attempts: ${err.message}`;
+          : `Error after ${MAX_TASK_RETRIES} attempts: ${err.message}`;
         break;
       }
 
       // Retry
-      console.warn(`[Executor] ⚠️ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_RETRIES}): ${err.message}. Retrying...`);
-      params.onStatus?.(`⚠️ Error, retrying... (${attempt}/${MAX_RETRIES})`);
+      console.warn(`[Executor] ⚠️ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_TASK_RETRIES}): ${err.message}. Retrying...`);
+      params.onStatus?.(`⚠️ Error, retrying... (${attempt}/${MAX_TASK_RETRIES})`);
       if (isRateLimit) {
-        params.onStatus?.("Rate limited, waiting 15s...");
-        await sleep(15000);
+        params.onStatus?.("Rate limited, waiting...");
+        await sleep(RATE_LIMIT_WAIT_MS);
       } else {
-        await sleep(2000);
+        await sleep(RETRY_WAIT_MS);
       }
     }
   }
