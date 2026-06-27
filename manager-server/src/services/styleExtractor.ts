@@ -22,7 +22,7 @@ export interface StyleProfile {
 // WhatsApp chat line pattern: "27/06/2026, 9:15 am - Name: message"
 const WA_LINE_REGEX = /^\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?\s*-\s*(.+?):\s*(.+)$/;
 
-export function parseWhatsAppChat(rawText: string): { userName: string; contactName: string; userMessages: string[]; contactMessages: string[] } {
+export function parseWhatsAppChat(rawText: string, userHint?: string): { userName: string; contactName: string; userMessages: string[]; contactMessages: string[] } {
   const lines = rawText.split("\n");
   const senders = new Map<string, string[]>();
 
@@ -34,20 +34,46 @@ export function parseWhatsAppChat(rawText: string): { userName: string; contactN
     const trimmedMsg = message.trim();
 
     // Skip system messages and media
-    if (trimmedMsg === "<Media omitted>" || trimmedMsg === "This message was deleted") continue;
+    if (trimmedMsg === "<Media omitted>" || trimmedMsg === "This message was deleted" || trimmedMsg === "<This message was edited>") continue;
     if (!senders.has(trimmedSender)) senders.set(trimmedSender, []);
     senders.get(trimmedSender)!.push(trimmedMsg);
   }
 
-  // The person with MORE messages is likely the user (or pick the first two)
-  const sorted = [...senders.entries()].sort((a, b) => b[1].length - a[1].length);
-  if (sorted.length < 2) {
-    // Single sender or no valid messages
-    const first = sorted[0] || ["Unknown", []];
+  const allSenders = [...senders.entries()];
+  if (allSenders.length < 2) {
+    const first = allSenders[0] || ["Unknown", []];
     return { userName: first[0], contactName: "Contact", userMessages: first[1], contactMessages: [] };
   }
 
-  // Assume user is the one with more messages (usually true in WhatsApp)
+  // If user gave a hint about who they are, use it to identify
+  if (userHint) {
+    const hintLower = userHint.toLowerCase();
+    for (const [name, msgs] of allSenders) {
+      const nameLower = name.toLowerCase();
+      // Check if hint contains the sender name or vice versa
+      if (hintLower.includes(nameLower) || nameLower.includes(hintLower)) {
+        const other = allSenders.find(([n]) => n !== name);
+        if (other) {
+          console.log(`[Parser] Identified user="${name}" from hint, contact="${other[0]}"`);
+          return { userName: name, contactName: other[0], userMessages: msgs, contactMessages: other[1] };
+        }
+      }
+    }
+    // Check for partial/emoji match — if hint has special chars like emoji
+    for (const [name, msgs] of allSenders) {
+      if (name.match(/[^\w\s]/) && (hintLower.includes("emoji") || hintLower.includes("~") || hintLower.includes("symbol"))) {
+        const other = allSenders.find(([n]) => n !== name);
+        if (other) {
+          console.log(`[Parser] Identified user="${name}" (emoji/symbol name) from hint, contact="${other[0]}"`);
+          return { userName: name, contactName: other[0], userMessages: msgs, contactMessages: other[1] };
+        }
+      }
+    }
+  }
+
+  // Fallback: user is the one with MORE messages
+  const sorted = allSenders.sort((a, b) => b[1].length - a[1].length);
+  console.log(`[Parser] No hint — using message count. User="${sorted[0][0]}" (${sorted[0][1].length} msgs), Contact="${sorted[1][0]}" (${sorted[1][1].length} msgs)`);
   return {
     userName: sorted[0][0],
     contactName: sorted[1][0],
@@ -56,10 +82,10 @@ export function parseWhatsAppChat(rawText: string): { userName: string; contactN
   };
 }
 
-export async function extractStyle(rawChat: string, relationship: string = "girlfriend"): Promise<StyleProfile> {
-  console.log(`[StyleExtractor] Parsing WhatsApp chat (${rawChat.length} chars)...`);
+export async function extractStyle(rawChat: string, relationship: string = "girlfriend", userHint?: string): Promise<StyleProfile> {
+  console.log(`[StyleExtractor] Parsing WhatsApp chat (${rawChat.length} chars)... hint: "${userHint || 'none'}"`);
 
-  const { userName, contactName, userMessages } = parseWhatsAppChat(rawChat);
+  const { userName, contactName, userMessages } = parseWhatsAppChat(rawChat, userHint);
   console.log(`[StyleExtractor] Found: ${userName} (${userMessages.length} msgs) talking to ${contactName}`);
 
   if (userMessages.length < 5) {

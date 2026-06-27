@@ -102,7 +102,23 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
             else if (msgLower.includes("dad") || msgLower.includes("papa") || msgLower.includes("father")) relationship = "father";
             else if (msgLower.includes("boss")) relationship = "boss";
             
-            const styleProfile = await extractStyle(parsed.text, relationship);
+            // Extract user identity hint — "emoji wala mai hun", "~ wala mai hun", "X naam se mai hun"
+            let userHint: string | undefined;
+            const hintMatch = userMessage.match(/(?:mai|main|mera|i am|i'm|me)\s+(?:hun|hoon|hu|am)\s*$/i) ? undefined :
+              userMessage.match(/(.{1,30})\s+(?:wala|wali|naam se|name)\s+(?:mai|main|mera|i|me)\s+(?:hun|hoon|hu|am)/i);
+            if (hintMatch) userHint = hintMatch[1].trim();
+            // Also check "X meri gf hai" pattern to identify the OTHER person
+            const gfNameMatch = userMessage.match(/(\w[\w\s]{1,25})\s+(?:meri|my)\s+(?:gf|girlfriend|bf|boyfriend)/i);
+            if (gfNameMatch) {
+              // User told us the GF's name — so the OTHER sender is the user
+              console.log(`[Style] GF name hint: "${gfNameMatch[1].trim()}"`);
+            }
+            // Check for emoji/symbol hint
+            if (msgLower.includes("emoji") || msgLower.includes("~") || msgLower.includes("symbol")) {
+              userHint = userHint || "emoji";
+            }
+            
+            const styleProfile = await extractStyle(parsed.text, relationship, userHint);
             
             // Save style profile to memory
             const styleText = `COMMUNICATION STYLE PROFILE (${relationship} - ${styleProfile.contactName}):\n${styleProfile.rawSummary}`;
