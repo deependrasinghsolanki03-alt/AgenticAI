@@ -79,9 +79,26 @@ export default function Chat() {
   const [showThinking, setShowThinking] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
+  const [attachment, setAttachment] = useState(null); // { name, type, data (base64) }
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // File attachment handler
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) { alert('File too large (max 5MB)'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      setAttachment({ name: file.name, type: file.type, data: base64 });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // reset input
+  };
 
   // Text-to-Speech
   const speakText = (msgId, text) => {
@@ -466,11 +483,17 @@ export default function Chat() {
         headers['X-Google-Token'] = providerToken;
       }
 
+      const body = { message: trimmed, session_id: activeSessionId };
+      if (attachment) {
+        body.file = { name: attachment.name, type: attachment.type, data: attachment.data };
+      }
+
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message: trimmed, session_id: activeSessionId }),
+        body: JSON.stringify(body),
       });
+      setAttachment(null); // clear after send
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
@@ -920,6 +943,29 @@ export default function Chat() {
               disabled={isLoading}
               id="chat-input"
             />
+            {/* Attachment Preview */}
+            {attachment && (
+              <div className="attachment-preview">
+                <span className="attachment-name">📎 {attachment.name}</span>
+                <button className="attachment-remove" onClick={() => setAttachment(null)}>✕</button>
+              </div>
+            )}
+            {/* Hidden file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              accept=".pdf,.csv,.txt,.json,.md,image/*"
+              style={{ display: 'none' }}
+            />
+            <button
+              className="btn-attach"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+              title="Attach file"
+            >
+              📎
+            </button>
             <button
               className={`btn-mic ${isListening ? 'btn-mic-active' : ''}`}
               onClick={toggleVoiceInput}

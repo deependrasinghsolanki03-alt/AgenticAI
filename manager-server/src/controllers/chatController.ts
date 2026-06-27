@@ -7,6 +7,7 @@ import { getEmbeddingModel } from "../services/embedding.js";
 import { getGoogleAuthClient } from "../config/googleAuth.js";
 import { runPlanner } from "../services/planner.js";
 import { extractFacts } from "../services/factExtractor.js";
+import { parseFile } from "../services/fileParser.js";
 
 function sendEvent(res: Response, event: string, data: Record<string, unknown>) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -15,7 +16,7 @@ function sendEvent(res: Response, event: string, data: Record<string, unknown>) 
 export async function handleChat(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
   const userId = req.user_id!;
-  const { message, session_id } = req.body;
+  const { message, session_id, file } = req.body;
 
   if (!message || typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "Field 'message' is required." });
@@ -74,6 +75,19 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     let contextText = shortTermContext + longTermContext;
     if (!contextText.trim()) {
       contextText = "No prior conversation history.";
+    }
+
+    // Parse file attachment if present
+    let fileContext = "";
+    if (file && file.name && file.data) {
+      sendEvent(res, "status", { stage: "file", detail: `Reading: ${file.name}...` });
+      try {
+        const parsed = await parseFile(file.name, file.type || "", file.data);
+        fileContext = `\n=== ATTACHED FILE: ${file.name} ===\nSummary: ${parsed.summary}\nContent:\n${parsed.text}\n=============================\n\n`;
+        contextText = fileContext + contextText;
+      } catch (fileErr: any) {
+        console.error("[Chat] File parse error:", fileErr.message);
+      }
     }
 
     // Google Auth
