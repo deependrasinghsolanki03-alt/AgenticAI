@@ -842,25 +842,23 @@ Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"H
 ${styleGuide ? `
 🚨🚨🚨 CRITICAL — PERSONALIZED STYLE PROFILE DETECTED 🚨🚨🚨
 You MUST write this email EXACTLY like the user writes. NOT like an AI. NOT like a formal email. 
-The user writes SHORT, casual, rapid-fire messages. COPY THEIR EXACT PATTERNS:
+COPY THEIR EXACT PATTERNS from the profile below:
 
 ${styleGuide}
 
 ⚠️ MANDATORY RULES FOR THIS EMAIL:
-1. USE THE USER'S EXACT PET NAMES from the profile above (e.g. "baby", "babu", etc.) — do NOT invent new ones like "mere pyaar", "meri jaan" if they don't use those
-2. USE THE USER'S EXACT GREETING STYLE (e.g. "hlo baby", "good morning baby") — do NOT write "Good evening, mere pyaar" 
-3. WRITE SHORT like WhatsApp — the user's average message is very short. Write 2-4 SHORT sentences max, NOT paragraphs
-4. USE HINGLISH exactly like the user — mix Hindi and English naturally, don't write pure Hindi or pure English
-5. USE THE USER'S SIGNATURE PHRASES from the profile (e.g. "okie", "haam", "muah", "byee")
-6. SIGN OFF like the user does (e.g. "muah byee" or "good night baby") — NOT "Pyaar se, [Name]"
-7. DO NOT write formal/poetic Hindi — the user writes casual Hinglish
-8. DO NOT write long paragraphs — keep it SHORT and sweet like a WhatsApp message converted to email
+1. USE ONLY the pet names from the profile above — do NOT invent new ones that aren't in the profile
+2. USE the greeting style from the profile — copy it exactly
+3. WRITE SHORT — match the message length from the profile. If profile says "short messages", write 2-4 SHORT sentences max, NOT paragraphs
+4. USE the SAME language mix from the profile — if it says Hinglish, write Hinglish
+5. USE the signature phrases and farewell style from the profile — copy them exactly
+6. DO NOT sign off formally like "Pyaar se, [Name]" — use the farewell pattern from the profile
+7. DO NOT write formal/poetic language — match the casual tone in the profile
+8. DO NOT write long paragraphs — keep it SHORT like the user's actual messages
 
-EXAMPLE of what the email body SHOULD look like (based on user's style):
-"hlo baby ❤️\\naaj thoda late ho jaunga sorry babu... office mein kaam zyada hai\\ntum khana kha lena okie\\nmuah byee 😘"
-
-EXAMPLE of what the email body should NOT look like:
-"Good evening, mere pyaar! Aaj ka din khatam ho gaya, lekin main tumhare saath hoon. Tumhare din ki shuruwat karein..." (THIS IS WRONG - too formal, too long, not the user's style)
+⚠️ BAD EXAMPLE (do NOT write like this):
+"Good evening, mere pyaar! Aaj ka din khatam ho gaya, lekin main tumhare saath hoon. Tumhare din ki shuruwat karein aur apne sapnon ko poora karne ke liye taiyaar ho jao..." 
+(THIS IS WRONG - too formal, too long, invented pet names, not matching the profile)
 ` : `
 Write like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
