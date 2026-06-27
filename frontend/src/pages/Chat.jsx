@@ -55,6 +55,10 @@ export default function Chat() {
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
   const [attachment, setAttachment] = useState(null); // { name, type, data (base64) }
+  const [styleProfiles, setStyleProfiles] = useState([]);
+  const [showPersonalization, setShowPersonalization] = useState(false);
+  const [showAddProfile, setShowAddProfile] = useState(false);
+  const [newProfile, setNewProfile] = useState({ relationship: 'girlfriend', contact_name: '', contact_email: '', style_text: '' });
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -189,6 +193,51 @@ export default function Chat() {
     } catch (err) {
       console.error('Failed to delete memory:', err);
     }
+  };
+
+  // ── Personalization CRUD ──
+  const fetchStyleProfiles = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/personalization`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { profiles } = await res.json();
+        setStyleProfiles(profiles || []);
+      }
+    } catch (err) { console.error('Failed to fetch profiles:', err); }
+  };
+
+  const saveStyleProfile = async () => {
+    if (!newProfile.contact_name || !newProfile.style_text) return alert('Contact name and style text are required!');
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/personalization`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProfile),
+      });
+      if (res.ok) {
+        setNewProfile({ relationship: 'girlfriend', contact_name: '', contact_email: '', style_text: '' });
+        setShowAddProfile(false);
+        fetchStyleProfiles();
+      }
+    } catch (err) { console.error('Failed to save profile:', err); }
+  };
+
+  const deleteStyleProfile = async (id) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/personalization/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setStyleProfiles(prev => prev.filter(p => p.id !== id));
+    } catch (err) { console.error('Failed to delete profile:', err); }
   };
 
   // HITL: Approve a pending action
@@ -794,6 +843,71 @@ export default function Chat() {
                     </div>
                     <div className="task-card-details">
                       <span>{new Date(mem.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Personalization Panel */}
+        <div className="tasks-section">
+          <button className="tasks-toggle" onClick={() => { setShowPersonalization(!showPersonalization); if (!showPersonalization) fetchStyleProfiles(); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" fill="currentColor" opacity="0.7"/>
+            </svg>
+            Personalization
+            {styleProfiles.length > 0 && (
+              <span className="tasks-badge">{styleProfiles.length}</span>
+            )}
+            <svg className={`tasks-chevron ${showPersonalization ? 'tasks-chevron-open' : ''}`} width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+          {showPersonalization && (
+            <div className="tasks-list">
+              <button className="btn-new-session" style={{ marginBottom: '8px', fontSize: '11px' }} onClick={() => setShowAddProfile(!showAddProfile)}>
+                {showAddProfile ? '✕ Cancel' : '＋ Add Style Profile'}
+              </button>
+              {showAddProfile && (
+                <div className="task-card" style={{ padding: '10px' }}>
+                  <select value={newProfile.relationship} onChange={e => setNewProfile({...newProfile, relationship: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px' }}>
+                    <option value="girlfriend">💕 Girlfriend</option>
+                    <option value="boyfriend">💕 Boyfriend</option>
+                    <option value="wife">💍 Wife</option>
+                    <option value="husband">💍 Husband</option>
+                    <option value="friend">🤝 Friend</option>
+                    <option value="boss">💼 Boss</option>
+                    <option value="mom">👩 Mom</option>
+                    <option value="dad">👨 Dad</option>
+                    <option value="colleague">🏢 Colleague</option>
+                    <option value="other">📧 Other</option>
+                  </select>
+                  <input type="text" placeholder="Contact name (e.g. Divyansh)" value={newProfile.contact_name} onChange={e => setNewProfile({...newProfile, contact_name: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px', boxSizing: 'border-box' }} />
+                  <input type="email" placeholder="Contact email (optional)" value={newProfile.contact_email} onChange={e => setNewProfile({...newProfile, contact_email: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px', boxSizing: 'border-box' }} />
+                  <textarea placeholder="Paste style profile here...&#10;(from local-style-extractor output)" value={newProfile.style_text} onChange={e => setNewProfile({...newProfile, style_text: e.target.value})} rows={5} style={{ width: '100%', padding: '6px', marginBottom: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '10px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }} />
+                  <button onClick={saveStyleProfile} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', fontWeight: '600', fontSize: '11px', cursor: 'pointer' }}>💾 Save Profile</button>
+                </div>
+              )}
+              {styleProfiles.length === 0 && !showAddProfile ? (
+                <div className="tasks-empty">No style profiles yet. Add one to personalize emails!</div>
+              ) : (
+                styleProfiles.map(p => (
+                  <div key={p.id} className="task-card">
+                    <div className="task-card-header">
+                      <span className="task-instruction">
+                        {p.relationship === 'girlfriend' ? '💕' : p.relationship === 'boyfriend' ? '💕' : p.relationship === 'boss' ? '💼' : p.relationship === 'friend' ? '🤝' : p.relationship === 'mom' ? '👩' : p.relationship === 'dad' ? '👨' : '📧'} {p.contact_name} ({p.relationship})
+                      </span>
+                      <button className="task-cancel-btn" onClick={() => deleteStyleProfile(p.id)} title="Delete profile">
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="task-card-details">
+                      <span>{p.contact_email || 'No email'}</span>
+                      <span>{p.style_text.substring(0, 80)}...</span>
                     </div>
                   </div>
                 ))
