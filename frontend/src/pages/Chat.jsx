@@ -2,62 +2,35 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import MinionCharacter from '../components/MinionCharacter';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// Enhanced markdown renderer for chat messages
-function renderMarkdown(text) {
-  if (!text) return '';
-  // Process line by line for block elements
-  const lines = text.split('\n');
-  let html = '';
-  let inList = false;
-  let listType = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-    // Escape HTML
-    line = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    // Headers
-    if (line.match(/^### /)) { line = '<h4 class="md-h4">' + line.slice(4) + '</h4>'; }
-    else if (line.match(/^## /)) { line = '<h3 class="md-h3">' + line.slice(3) + '</h3>'; }
-    else if (line.match(/^# /)) { line = '<h2 class="md-h2">' + line.slice(2) + '</h2>'; }
-    // Horizontal rule
-    else if (line.match(/^---+$/)) { line = '<hr class="md-hr"/>'; }
-    // Bullet list
-    else if (line.match(/^[\s]*[-*•]\s/)) {
-      const content = line.replace(/^[\s]*[-*•]\s/, '');
-      if (!inList || listType !== 'ul') { if (inList) html += `</${listType}>`; html += '<ul class="md-list">'; inList = true; listType = 'ul'; }
-      line = '<li>' + applyInline(content) + '</li>';
-      html += line; continue;
-    }
-    // Numbered list
-    else if (line.match(/^\s*\d+[.)]\s/)) {
-      const content = line.replace(/^\s*\d+[.)]\s/, '');
-      if (!inList || listType !== 'ol') { if (inList) html += `</${listType}>`; html += '<ol class="md-list">'; inList = true; listType = 'ol'; }
-      line = '<li>' + applyInline(content) + '</li>';
-      html += line; continue;
-    }
-    else {
-      if (inList) { html += `</${listType}>`; inList = false; listType = ''; }
-      if (line.trim() === '') { line = '<br/>'; }
-      else { line = '<p class="md-p">' + applyInline(line) + '</p>'; }
-    }
-    html += line;
-  }
-  if (inList) html += `</${listType}>`;
-  return html;
-}
-
-// Inline formatting: bold, italic, code, links
-function applyInline(text) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+// ReactMarkdown component for rendering assistant messages
+function MarkdownMessage({ content }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        h1: ({children}) => <h2 className="md-h2">{children}</h2>,
+        h2: ({children}) => <h3 className="md-h3">{children}</h3>,
+        h3: ({children}) => <h4 className="md-h4">{children}</h4>,
+        p: ({children}) => <p className="md-p">{children}</p>,
+        ul: ({children}) => <ul className="md-list">{children}</ul>,
+        ol: ({children}) => <ol className="md-list">{children}</ol>,
+        hr: () => <hr className="md-hr" />,
+        a: ({href, children}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+        code: ({inline, className, children}) => {
+          if (inline) return <code>{children}</code>;
+          return <pre className="md-code-block"><code className={className}>{children}</code></pre>;
+        },
+        table: ({children}) => <table className="md-table">{children}</table>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 
@@ -846,7 +819,9 @@ export default function Chat() {
                 </div>
               )}
               <div className="message-body">
-                <div className="message-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                <div className="message-content">
+                  <MarkdownMessage content={msg.content} />
+                </div>
                 <div className="message-footer">
                   <span className="message-time">{formatTime(msg.timestamp)}</span>
                   {msg.role === 'assistant' && !msg.isError && (
