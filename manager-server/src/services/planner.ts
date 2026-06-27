@@ -836,35 +836,51 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", `You are writing an email AS the user (sender: "{sender_name}"). 
-Write it like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
 Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
 
 ${styleGuide ? `
-🎯 USER'S PERSONALIZED STYLE:
+🚨🚨🚨 CRITICAL — PERSONALIZED STYLE PROFILE DETECTED 🚨🚨🚨
+You MUST write this email EXACTLY like the user writes. NOT like an AI. NOT like a formal email. 
+The user writes SHORT, casual, rapid-fire messages. COPY THEIR EXACT PATTERNS:
+
 ${styleGuide}
 
-USE THIS STYLE! Write the email exactly like the user would write it themselves — same pet names, same phrases, same emoji style, same language.
-` : ""}
+⚠️ MANDATORY RULES FOR THIS EMAIL:
+1. USE THE USER'S EXACT PET NAMES from the profile above (e.g. "baby", "babu", etc.) — do NOT invent new ones like "mere pyaar", "meri jaan" if they don't use those
+2. USE THE USER'S EXACT GREETING STYLE (e.g. "hlo baby", "good morning baby") — do NOT write "Good evening, mere pyaar" 
+3. WRITE SHORT like WhatsApp — the user's average message is very short. Write 2-4 SHORT sentences max, NOT paragraphs
+4. USE HINGLISH exactly like the user — mix Hindi and English naturally, don't write pure Hindi or pure English
+5. USE THE USER'S SIGNATURE PHRASES from the profile (e.g. "okie", "haam", "muah", "byee")
+6. SIGN OFF like the user does (e.g. "muah byee" or "good night baby") — NOT "Pyaar se, [Name]"
+7. DO NOT write formal/poetic Hindi — the user writes casual Hinglish
+8. DO NOT write long paragraphs — keep it SHORT and sweet like a WhatsApp message converted to email
+
+EXAMPLE of what the email body SHOULD look like (based on user's style):
+"hlo baby ❤️\\naaj thoda late ho jaunga sorry babu... office mein kaam zyada hai\\ntum khana kha lena okie\\nmuah byee 😘"
+
+EXAMPLE of what the email body should NOT look like:
+"Good evening, mere pyaar! Aaj ka din khatam ho gaya, lekin main tumhare saath hoon. Tumhare din ki shuruwat karein..." (THIS IS WRONG - too formal, too long, not the user's style)
+` : `
+Write like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
 ✍️ WRITING STYLE RULES:
-1. ${styleGuide ? "MATCH the user's communication style shown above — their pet names, phrases, emoji usage, language, and tone" : "Write like a real person texting/emailing a friend or colleague"}
-2. Use the SAME LANGUAGE the user chats in. If user speaks Hinglish → write Hinglish email. If English → English.
-3. Keep it SHORT and natural. No corporate jargon like "I hope this email finds you well"
-4. Sign off with the sender's name: "{sender_name}"
-5. TONE RULES (VERY IMPORTANT):
-   - If instruction contains "girlfriend", "GF", "boyfriend", "BF", "love", "babe" → write romantic/sweet email
-   - If instruction is just "send email to X@gmail.com" or "good morning email" → write FRIENDLY but NOT romantic. No "hey love", "baby", "jaanu" etc.
-   - If instruction mentions study/work → be clear and motivational
-   - DEFAULT tone = friendly and casual, NOT romantic
-6. Include ALL actual data from previous tasks — topic names, event details, links etc.
+1. Write like a real person texting/emailing
+2. Keep it SHORT and natural. No corporate jargon
+3. Sign off with the sender's name: "{sender_name}"
+4. TONE RULES:
+   - If instruction mentions girlfriend/GF/boyfriend → romantic/sweet
+   - If instruction is professional → friendly but professional
+   - DEFAULT = friendly and casual
+5. Include ALL actual data from previous tasks
+`}
 
 🚨 NEVER:
 - Use placeholder emails like girlfriend@example.com
-- Use placeholder text like [previous task 1], [topic name]
+- Use placeholder text like [previous task 1]
 - Write robotic AI-sounding text
 - Write overly formal corporate emails
-- Assume someone is a girlfriend/boyfriend unless the instruction EXPLICITLY says so
+${styleGuide ? "- Write long paragraphs when user's style is short messages\n- Invent pet names the user doesn't actually use\n- Write formal Hindi when user writes casual Hinglish" : ""}
 
 Known recipient email: {context_email}
 
