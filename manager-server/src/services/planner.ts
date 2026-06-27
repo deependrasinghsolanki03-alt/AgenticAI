@@ -306,8 +306,10 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
   let pendingActions: { id: string; tool: string; args: Record<string, unknown> }[] | undefined;
   let output = "";
 
-  try {
-    switch (task.agent) {
+  const MAX_RETRIES = 2;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      switch (task.agent) {
       // ── RESEARCHER: Calls Worker Server (with 8B fallback) ──
       case "researcher": {
         params.onStatus?.(`Researching: ${task.instruction.substring(0, 50)}...`);
@@ -642,13 +644,30 @@ Output ONLY valid JSON.`],
         output = typeof res.content === "string" ? res.content : JSON.stringify(res.content);
         break;
       }
-    }
-  } catch (err: any) {
-    console.error(`[Executor] ❌ ${task.id}(${task.agent}) failed:`, err.message);
-    output = `Error: ${err.message}`;
-    if (err.message?.includes("429")) {
-      params.onStatus?.("Rate limited, waiting 15s...");
-      await sleep(15000);
+      } // close switch
+      break; // success — exit retry loop
+    } catch (err: any) {
+      const isAuthError = err.message?.includes("401") || err.message?.includes("invalid_grant") || err.message?.includes("Token has been expired");
+      const isRateLimit = err.message?.includes("429");
+
+      if (isAuthError || attempt === MAX_RETRIES) {
+        // Don't retry auth errors or last attempt
+        console.error(`[Executor] ❌ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_RETRIES}):`, err.message);
+        output = isAuthError
+          ? "⚠️ Authentication error — please re-login with Google to refresh permissions."
+          : `Error after ${MAX_RETRIES} attempts: ${err.message}`;
+        break;
+      }
+
+      // Retry
+      console.warn(`[Executor] ⚠️ ${task.id}(${task.agent}) failed (attempt ${attempt}/${MAX_RETRIES}): ${err.message}. Retrying...`);
+      params.onStatus?.(`⚠️ Error, retrying... (${attempt}/${MAX_RETRIES})`);
+      if (isRateLimit) {
+        params.onStatus?.("Rate limited, waiting 15s...");
+        await sleep(15000);
+      } else {
+        await sleep(2000);
+      }
     }
   }
 
