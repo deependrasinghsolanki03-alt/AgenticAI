@@ -1,19 +1,22 @@
 import { google } from "googleapis";
 import { supabaseAdmin } from "./supabase.js";
+import { encrypt, decrypt } from "../utils/crypto.js";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 export async function saveGoogleTokens(userId: string, refreshToken: string): Promise<void> {
+  // Encrypt token before storing in database
+  const encryptedToken = encrypt(refreshToken);
   const { error } = await supabaseAdmin.from("user_tokens").upsert(
-    { user_id: userId, google_refresh_token: refreshToken, updated_at: new Date().toISOString() },
+    { user_id: userId, google_refresh_token: encryptedToken, updated_at: new Date().toISOString() },
     { onConflict: "user_id" }
   );
   if (error) {
     console.error("[GoogleAuth] Failed to save refresh token:", error.message);
     throw new Error("Failed to save Google credentials.");
   }
-  console.log(`[GoogleAuth] Refresh token saved for user: ${userId}`);
+  console.log(`[GoogleAuth] Encrypted refresh token saved for user: ${userId}`);
 }
 
 export async function getGoogleAuthClient(userId: string): Promise<InstanceType<typeof google.auth.OAuth2> | null> {
@@ -27,7 +30,9 @@ export async function getGoogleAuthClient(userId: string): Promise<InstanceType<
     console.warn(`[GoogleAuth] No refresh token for user: ${userId}`);
     return null;
   }
+  // Decrypt token (backward compatible with plain text)
+  const refreshToken = decrypt(data.google_refresh_token);
   const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
-  oauth2Client.setCredentials({ refresh_token: data.google_refresh_token });
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
   return oauth2Client;
 }
