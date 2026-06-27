@@ -420,23 +420,27 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         const instrLower = task.instruction.toLowerCase();
         const isSend = instrLower.includes("send") || instrLower.includes("bhejo") || instrLower.includes("write") || instrLower.includes("compose") || instrLower.includes("likh") || instrLower.includes("draft");
 
-        // Fetch user's personalization style profiles from DB
-        let personalizedStyle = "";
+        // Fetch user's personalization style profiles from DB (encrypted)
+        let personalizedProfiles: Array<{relationship: string; contact_name: string; contact_email: string; style_text: string}> = [];
         try {
+          const { decrypt } = await import("../utils/crypto.js");
           const { data: styleProfiles } = await supabaseAdmin
             .from("email_style_profiles")
             .select("relationship, contact_name, contact_email, style_text")
             .eq("user_id", params.userId);
           if (styleProfiles && styleProfiles.length > 0) {
-            personalizedStyle = styleProfiles.map(p =>
-              `STYLE FOR ${p.relationship} (${p.contact_name}${p.contact_email ? `, ${p.contact_email}` : ''}):\n${p.style_text}`
-            ).join('\n\n---\n\n');
-            console.log(`[Emailer] Found ${styleProfiles.length} style profile(s)`);
+            personalizedProfiles = styleProfiles.map(p => ({
+              relationship: p.relationship,
+              contact_name: p.contact_name,
+              contact_email: p.contact_email ? decrypt(p.contact_email) : "",
+              style_text: decrypt(p.style_text),
+            }));
+            console.log(`[Emailer] Found ${personalizedProfiles.length} encrypted style profile(s)`);
           }
         } catch (e: any) { console.error("[Emailer] Style fetch error:", e.message); }
 
         if (isSend) {
-          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context, params.userEmail, personalizedStyle);
+          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context, params.userEmail, personalizedProfiles);
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
@@ -756,53 +760,66 @@ CRITICAL RULES:
 }
 
 // ── Email Param Extractor (Humanized & Context-Aware) ──
-async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string, senderEmail?: string, personalizedStyle?: string): Promise<{ to: string; subject: string; body: string }> {
+type StyleProfile = { relationship: string; contact_name: string; contact_email: string; style_text: string };
+async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string, senderEmail?: string, personalizedProfiles?: StyleProfile[]): Promise<{ to: string; subject: string; body: string }> {
   console.log("[ParamExtractor:Email] Extracting email params...");
   const depData = Object.entries(depOutputs).map(([id, out]) => `[${id} output]:\n${out}`).join("\n\n");
 
-  // Extract sender name from email (e.g., "johnsmith" → "John")
+  // Extract sender name from email
   let senderName = "Me";
   if (senderEmail) {
     const namePart = senderEmail.split("@")[0].replace(/[0-9._-]+$/g, "").replace(/[._-]/g, " ");
     senderName = namePart.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") || "Me";
   }
-  console.log(`[ParamExtractor:Email] Sender name: ${senderName}`);
 
-  // Extract recipient email from context using regex
+  // Extract recipient email from context
   const allText = `${instruction} ${userMessage} ${context || ""} ${depData}`;
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const foundEmails: string[] = allText.match(emailRegex) || [];
   const realEmails = foundEmails.filter((e: string) => 
     !e.includes("example.com") && !e.includes("placeholder") && !e.includes("test.com") &&
-    e !== senderEmail // Don't send to yourself
+    e !== senderEmail
   );
   const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
   console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
-  // ── Style matching: DB profiles (priority) + context-based (fallback) ──
+  // ── Style matching: EMAIL-FIRST → relationship → context fallback ──
   let styleGuide = "";
   const instrLower = instruction.toLowerCase();
   
-  // 1. DB PROFILES — specific contacts (GF, boss, mom etc.)
-  if (personalizedStyle) {
-    const relationshipKeywords = ["girlfriend", "gf", "boyfriend", "bf", "wife", "biwi", "husband", "love", "babe", "jaanu", "friend", "dost", "boss", "mom", "maa", "dad", "papa"];
-    
-    for (const keyword of relationshipKeywords) {
-      if (instrLower.includes(keyword) && personalizedStyle.toLowerCase().includes(keyword)) {
-        styleGuide = personalizedStyle;
-        console.log(`[ParamExtractor:Email] ✅ DB style matched: "${keyword}"`);
-        break;
+  if (personalizedProfiles && personalizedProfiles.length > 0) {
+    // 1. PRIMARY: Match by exact email address
+    if (contextEmail) {
+      const emailMatch = personalizedProfiles.find(p => 
+        p.contact_email && p.contact_email.toLowerCase().trim() === contextEmail.toLowerCase().trim()
+      );
+      if (emailMatch) {
+        styleGuide = `STYLE FOR ${emailMatch.relationship} (${emailMatch.contact_name}, ${emailMatch.contact_email}):\n${emailMatch.style_text}`;
+        console.log(`[ParamExtractor:Email] ✅ MATCHED by email: "${contextEmail}" → ${emailMatch.contact_name} (${emailMatch.relationship})`);
       }
     }
     
-    // Also match by contact email
-    if (!styleGuide && contextEmail && personalizedStyle.toLowerCase().includes(contextEmail.toLowerCase())) {
-      styleGuide = personalizedStyle;
-      console.log(`[ParamExtractor:Email] ✅ DB style matched by email: "${contextEmail}"`);
+    // 2. FALLBACK: Match by relationship keyword in instruction
+    if (!styleGuide) {
+      const relationshipKeywords = ["girlfriend", "gf", "boyfriend", "bf", "wife", "biwi", "husband", "love", "babe", "jaanu", "friend", "dost", "boss", "mom", "maa", "dad", "papa"];
+      for (const keyword of relationshipKeywords) {
+        if (instrLower.includes(keyword)) {
+          const match = personalizedProfiles.find(p => p.relationship.toLowerCase().includes(keyword));
+          if (match) {
+            styleGuide = `STYLE FOR ${match.relationship} (${match.contact_name}, ${match.contact_email}):\n${match.style_text}`;
+            console.log(`[ParamExtractor:Email] ✅ MATCHED by relationship: "${keyword}" → ${match.contact_name}`);
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!styleGuide) {
+      console.log(`[ParamExtractor:Email] ℹ️ ${personalizedProfiles.length} profile(s) exist but no match. Default style.`);
     }
   }
   
-  // 2. CONTEXT-BASED — from memory/Pinecone (fallback if no DB match)
+  // 3. CONTEXT-BASED — from memory/Pinecone (last resort)
   if (!styleGuide) {
     const contextStyleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:ONLY use this style when writing to:[\s\S]*?)(?=\n===|$)/);
     if (contextStyleMatch) {
@@ -810,16 +827,11 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
         instrLower.includes("boyfriend") || instrLower.includes("bf") ||
         instrLower.includes("wife") || instrLower.includes("husband") ||
         instrLower.includes("babe") || instrLower.includes("jaanu");
-      
       if (isForStyledContact) {
         styleGuide = contextStyleMatch[0];
-        console.log(`[ParamExtractor:Email] ✅ Context style matched (memory)`);
+        console.log(`[ParamExtractor:Email] ✅ Context style matched (memory fallback)`);
       }
     }
-  }
-  
-  if (!styleGuide && personalizedStyle) {
-    console.log(`[ParamExtractor:Email] ℹ️ Profiles exist but no match. Using default style.`);
   }
 
   const prompt = ChatPromptTemplate.fromMessages([
