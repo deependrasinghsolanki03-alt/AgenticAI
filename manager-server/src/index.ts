@@ -10,6 +10,7 @@ import { loadChats, saveChat, clearChats, listSessions, createSession, updateSes
 import { listScheduledTasks, cancelScheduledTask } from "./controllers/taskController.js";
 import { listMemories, deleteMemory } from "./controllers/memoryController.js";
 import { listPendingActions, approveAction, rejectAction } from "./controllers/pendingActionController.js";
+import { listStyleProfiles, saveStyleProfile, deleteStyleProfile } from "./controllers/personalizationController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
 import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
@@ -97,6 +98,11 @@ app.delete("/api/memories/:id", verifyAuth, deleteMemory);
 app.get("/api/actions/pending", verifyAuth, listPendingActions);
 app.post("/api/actions/:id/approve", verifyAuth, approveAction);
 app.post("/api/actions/:id/reject", verifyAuth, rejectAction);
+
+// ── Personalization ──
+app.get("/api/personalization", verifyAuth, listStyleProfiles);
+app.post("/api/personalization", verifyAuth, saveStyleProfile);
+app.delete("/api/personalization/:id", verifyAuth, deleteStyleProfile);
 
 // Scheduler Tick — called by cron-job.org (protected by secret)
 // Responds INSTANTLY, processes tasks in background (fits 30s timeout)

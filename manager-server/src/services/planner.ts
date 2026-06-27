@@ -420,8 +420,23 @@ async function executeTask(task: TaskNode, depOutputs: Record<string, string>, p
         const instrLower = task.instruction.toLowerCase();
         const isSend = instrLower.includes("send") || instrLower.includes("bhejo") || instrLower.includes("write") || instrLower.includes("compose") || instrLower.includes("likh") || instrLower.includes("draft");
 
+        // Fetch user's personalization style profiles from DB
+        let personalizedStyle = "";
+        try {
+          const { data: styleProfiles } = await supabaseAdmin
+            .from("email_style_profiles")
+            .select("relationship, contact_name, contact_email, style_text")
+            .eq("user_id", params.userId);
+          if (styleProfiles && styleProfiles.length > 0) {
+            personalizedStyle = styleProfiles.map(p =>
+              `STYLE FOR ${p.relationship} (${p.contact_name}${p.contact_email ? `, ${p.contact_email}` : ''}):\n${p.style_text}`
+            ).join('\n\n---\n\n');
+            console.log(`[Emailer] Found ${styleProfiles.length} style profile(s)`);
+          }
+        } catch (e: any) { console.error("[Emailer] Style fetch error:", e.message); }
+
         if (isSend) {
-          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context, params.userEmail);
+          const emailParams = await extractEmailParams(task.instruction, depOutputs, params.userMessage, params.context, params.userEmail, personalizedStyle);
           if (!emailParams.to) {
             output = "Email address nahi mila. Kisko bhejun? Please provide email address.";
           } else {
@@ -741,7 +756,7 @@ CRITICAL RULES:
 }
 
 // ── Email Param Extractor (Humanized & Context-Aware) ──
-async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string, senderEmail?: string): Promise<{ to: string; subject: string; body: string }> {
+async function extractEmailParams(instruction: string, depOutputs: Record<string, string>, userMessage: string, context?: string, senderEmail?: string, personalizedStyle?: string): Promise<{ to: string; subject: string; body: string }> {
   console.log("[ParamExtractor:Email] Extracting email params...");
   const depData = Object.entries(depOutputs).map(([id, out]) => `[${id} output]:\n${out}`).join("\n\n");
 
@@ -764,24 +779,47 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
   const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
   console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
-  // Check if context has a COMMUNICATION STYLE PROFILE and if this email is for that contact
-  const styleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:ONLY use this style when writing to:[\s\S]*?)(?=\n===|$)/);
+  // ── Style matching: DB profiles (priority) + context-based (fallback) ──
   let styleGuide = "";
-  if (styleMatch) {
-    // Only apply style if the instruction mentions the relationship
-    const instrLower = instruction.toLowerCase();
-    const isForStyledContact = instrLower.includes("girlfriend") || instrLower.includes("gf") || 
-      instrLower.includes("boyfriend") || instrLower.includes("bf") ||
-      instrLower.includes("wife") || instrLower.includes("biwi") ||
-      instrLower.includes("husband") || instrLower.includes("love") ||
-      instrLower.includes("babe") || instrLower.includes("jaanu");
+  const instrLower = instruction.toLowerCase();
+  
+  // 1. DB PROFILES — specific contacts (GF, boss, mom etc.)
+  if (personalizedStyle) {
+    const relationshipKeywords = ["girlfriend", "gf", "boyfriend", "bf", "wife", "biwi", "husband", "love", "babe", "jaanu", "friend", "dost", "boss", "mom", "maa", "dad", "papa"];
     
-    if (isForStyledContact) {
-      styleGuide = styleMatch[0];
-      console.log(`[ParamExtractor:Email] ✅ Using personalized style for this contact!`);
-    } else {
-      console.log(`[ParamExtractor:Email] ℹ️ Style profile exists but this email is NOT for that contact. Using default style.`);
+    for (const keyword of relationshipKeywords) {
+      if (instrLower.includes(keyword) && personalizedStyle.toLowerCase().includes(keyword)) {
+        styleGuide = personalizedStyle;
+        console.log(`[ParamExtractor:Email] ✅ DB style matched: "${keyword}"`);
+        break;
+      }
     }
+    
+    // Also match by contact email
+    if (!styleGuide && contextEmail && personalizedStyle.toLowerCase().includes(contextEmail.toLowerCase())) {
+      styleGuide = personalizedStyle;
+      console.log(`[ParamExtractor:Email] ✅ DB style matched by email: "${contextEmail}"`);
+    }
+  }
+  
+  // 2. CONTEXT-BASED — from memory/Pinecone (fallback if no DB match)
+  if (!styleGuide) {
+    const contextStyleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:ONLY use this style when writing to:[\s\S]*?)(?=\n===|$)/);
+    if (contextStyleMatch) {
+      const isForStyledContact = instrLower.includes("girlfriend") || instrLower.includes("gf") || 
+        instrLower.includes("boyfriend") || instrLower.includes("bf") ||
+        instrLower.includes("wife") || instrLower.includes("husband") ||
+        instrLower.includes("babe") || instrLower.includes("jaanu");
+      
+      if (isForStyledContact) {
+        styleGuide = contextStyleMatch[0];
+        console.log(`[ParamExtractor:Email] ✅ Context style matched (memory)`);
+      }
+    }
+  }
+  
+  if (!styleGuide && personalizedStyle) {
+    console.log(`[ParamExtractor:Email] ℹ️ Profiles exist but no match. Using default style.`);
   }
 
   const prompt = ChatPromptTemplate.fromMessages([
@@ -791,10 +829,10 @@ Write it like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporat
 Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
 
 ${styleGuide ? `
-🎯 USER'S ACTUAL COMMUNICATION STYLE (from their WhatsApp chats):
+🎯 USER'S PERSONALIZED STYLE:
 ${styleGuide}
 
-USE THIS STYLE! Write the email exactly like the user would write it themselves — same pet names, same phrases, same emoji style, same language. The email should feel like the user wrote it, not an AI.
+USE THIS STYLE! Write the email exactly like the user would write it themselves — same pet names, same phrases, same emoji style, same language.
 ` : ""}
 
 ✍️ WRITING STYLE RULES:

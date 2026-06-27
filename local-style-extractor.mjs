@@ -31,7 +31,11 @@ function parseChat(filePath) {
     const sender = match[1].trim();
     const msg = match[2].trim();
     
+    // Skip ALL WhatsApp system/auto messages
     if (msg === '<Media omitted>' || msg === 'This message was deleted' || msg === '<This message was edited>') continue;
+    if (msg.match(/^(You deleted this message|This message was deleted|.*waiting for this message|.*Messages and calls are end-to-end encrypted|.*security code changed|.*created group|.*added you|.*removed you|.*left|.*changed the subject|.*changed this group|.*changed the group|Missed voice call|Missed video call|.*joined using this group|.*phone number changed|Location shared|Live location shared|image omitted|video omitted|audio omitted|sticker omitted|document omitted|Contact card omitted|GIF omitted|\d+ messages? forwarded)$/i)) continue;
+    // Skip messages that are JUST system text fragments
+    if (msg.match(/^(you deleted this message|this message was deleted|message was edited|this message was edited|deleted this message)$/i)) continue;
     if (SENSITIVE_PATTERNS.test(msg)) { skippedSensitive++; continue; }
     
     if (!senders.has(sender)) senders.set(sender, []);
@@ -246,13 +250,27 @@ function analyzeStyle(messages) {
       phrases.set(trigram, (phrases.get(trigram) || 0) + 1);
     }
   }
-  // Filter out boring phrases
+  // Filter out boring phrases AND system message fragments
   const boringWords = new Set(['the', 'and', 'is', 'in', 'to', 'it', 'of', 'for', 'on', 'at', 'hai', 'ka', 'ki', 'ke', 'se', 'ko', 'me', 'mai']);
+  const systemPhrases = new Set([
+    'this message', 'message was', 'was edited', 'was deleted', 'this message was',
+    'message was edited', 'message was deleted', 'you deleted', 'deleted this',
+    'you deleted this', 'deleted this message', 'you deleted this message',
+    'waiting for', 'this message was edited', 'this message was deleted',
+    'media omitted', 'image omitted', 'video omitted', 'audio omitted',
+    'sticker omitted', 'document omitted', 'missed voice', 'missed video',
+    'voice call', 'video call', 'missed voice call', 'missed video call',
+    'security code', 'code changed', 'end to', 'to end', 'end encrypted',
+    'are end', 'calls are', 'messages and', 'and calls',
+  ]);
   const commonPhrases = [...phrases.entries()]
     .filter(([phrase, count]) => {
       if (count < 3) return false;
       const words = phrase.split(' ');
       if (words.every(w => boringWords.has(w))) return false;
+      if (systemPhrases.has(phrase)) return false;
+      // Also filter phrases containing system words
+      if (phrase.includes('deleted') || phrase.includes('omitted') || phrase.includes('edited') || phrase.includes('encrypted')) return false;
       return true;
     })
     .sort((a, b) => b[1] - a[1])

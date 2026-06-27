@@ -84,62 +84,7 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
       try {
         const parsed = await parseFile(file.name, file.type || "", file.data);
         
-        // Detect WhatsApp chat export and extract communication style
-        const isWhatsAppChat = parsed.text.match(/\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?\s*-\s*.+?:\s*.+/m);
-        if (isWhatsAppChat) {
-          sendEvent(res, "status", { stage: "style", detail: "Analyzing your communication style..." });
-          try {
-            const { extractStyle } = await import("../services/styleExtractor.js");
-            // Detect relationship from user message
-            const msgLower = userMessage.toLowerCase();
-            let relationship = "contact";
-            if (msgLower.includes("gf") || msgLower.includes("girlfriend")) relationship = "girlfriend";
-            else if (msgLower.includes("bf") || msgLower.includes("boyfriend")) relationship = "boyfriend";
-            else if (msgLower.includes("wife") || msgLower.includes("biwi")) relationship = "wife";
-            else if (msgLower.includes("husband")) relationship = "husband";
-            else if (msgLower.includes("friend") || msgLower.includes("dost")) relationship = "friend";
-            else if (msgLower.includes("mom") || msgLower.includes("maa") || msgLower.includes("mother")) relationship = "mother";
-            else if (msgLower.includes("dad") || msgLower.includes("papa") || msgLower.includes("father")) relationship = "father";
-            else if (msgLower.includes("boss")) relationship = "boss";
-            
-            // Extract user identity hint — "emoji wala mai hun", "~ wala mai hun", "X naam se mai hun"
-            let userHint: string | undefined;
-            const hintMatch = userMessage.match(/(?:mai|main|mera|i am|i'm|me)\s+(?:hun|hoon|hu|am)\s*$/i) ? undefined :
-              userMessage.match(/(.{1,30})\s+(?:wala|wali|naam se|name)\s+(?:mai|main|mera|i|me)\s+(?:hun|hoon|hu|am)/i);
-            if (hintMatch) userHint = hintMatch[1].trim();
-            // Also check "X meri gf hai" pattern to identify the OTHER person
-            const gfNameMatch = userMessage.match(/(\w[\w\s]{1,25})\s+(?:meri|my)\s+(?:gf|girlfriend|bf|boyfriend)/i);
-            if (gfNameMatch) {
-              // User told us the GF's name — so the OTHER sender is the user
-              console.log(`[Style] GF name hint: "${gfNameMatch[1].trim()}"`);
-            }
-            // Check for emoji/symbol hint
-            if (msgLower.includes("emoji") || msgLower.includes("~") || msgLower.includes("symbol")) {
-              userHint = userHint || "emoji";
-            }
-            
-            const styleProfile = await extractStyle(parsed.text, relationship, userHint);
-            
-            // Save style profile to memory
-            const styleText = `COMMUNICATION STYLE PROFILE (${relationship} - ${styleProfile.contactName}):\n${styleProfile.rawSummary}`;
-            const { data: styleLog } = await supabaseAdmin.from("memory_logs").insert({ user_id: userId, log_text: styleText, session_id: session_id || null }).select("id").single();
-            if (styleLog?.id) {
-              const styleStore = await PineconeStore.fromExistingIndex(embeddings, { pineconeIndex, namespace: userId });
-              await styleStore.addDocuments([{
-                pageContent: styleText,
-                metadata: { log_id: styleLog.id, user_id: userId, type: "style_profile", relationship, contact_name: styleProfile.contactName, timestamp: new Date().toISOString() }
-              }], { ids: [styleLog.id] });
-              console.log(`[Style] ✅ Saved ${relationship} style profile: ${styleLog.id}`);
-            }
-            
-            fileContext = `\n=== COMMUNICATION STYLE LEARNED ===\n${styleProfile.rawSummary}\n===================================\n\n`;
-          } catch (styleErr: any) {
-            console.error("[Style] Error:", styleErr.message);
-            fileContext = `\n=== ATTACHED FILE: ${file.name} ===\nSummary: ${parsed.summary}\nContent:\n${parsed.text.substring(0, 2000)}\n=============================\n\n`;
-          }
-        } else {
-          fileContext = `\n=== ATTACHED FILE: ${file.name} ===\nSummary: ${parsed.summary}\nContent:\n${parsed.text}\n=============================\n\n`;
-        }
+        fileContext = `\n=== ATTACHED FILE: ${file.name} ===\nSummary: ${parsed.summary}\nContent:\n${parsed.text}\n=============================\n\n`;
         contextText = fileContext + contextText;
       } catch (fileErr: any) {
         console.error("[Chat] File parse error:", fileErr.message);

@@ -33,8 +33,9 @@ export function parseWhatsAppChat(rawText: string, userHint?: string): { userNam
     const trimmedSender = sender.trim();
     const trimmedMsg = message.trim();
 
-    // Skip system messages and media
+    // Skip ALL WhatsApp system/auto messages
     if (trimmedMsg === "<Media omitted>" || trimmedMsg === "This message was deleted" || trimmedMsg === "<This message was edited>") continue;
+    if (trimmedMsg.match(/^(You deleted this message|This message was deleted|.*waiting for this message|.*Messages and calls are end-to-end encrypted|.*security code changed|Missed voice call|Missed video call|.*joined using this group|Location shared|Live location shared)$/i)) continue;
     if (!senders.has(trimmedSender)) senders.set(trimmedSender, []);
     senders.get(trimmedSender)!.push(trimmedMsg);
   }
