@@ -19,18 +19,17 @@ export async function listMemories(req: Request, res: Response): Promise<void> {
 
     if (error) throw error;
 
-    // Format: extract a short preview from each log
+    // Format: extract a clean short preview from each log
     const memories = (data || []).map(m => {
-      let previewText = m.log_text.replace(/\n/g, " ").trim();
-      if (previewText.length > 50) {
-        previewText = previewText.substring(0, 50) + "...";
-      }
+      // Extract just the user's part, strip "User:" / "Assistant:" prefixes
+      let preview = m.log_text.replace(/\n/g, " ").trim();
+      const userMatch = preview.match(/^User:\s*(.+?)(?:\s*Assistant:|$)/i);
+      if (userMatch) preview = userMatch[1].trim();
+      if (preview.length > 60) preview = preview.substring(0, 57) + "...";
       return {
         id: m.id,
-        preview: previewText,
-        full_text: m.log_text,
+        preview,
         created_at: m.created_at,
-        session_id: m.session_id,
       };
     });
 
