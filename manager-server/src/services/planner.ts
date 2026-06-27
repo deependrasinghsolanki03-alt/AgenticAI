@@ -764,14 +764,26 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
   const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
   console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
+  // Check if context has a COMMUNICATION STYLE PROFILE
+  const styleMatch = (context || "").match(/COMMUNICATION STYLE PROFILE[\s\S]*?(?:Sample messages for reference:[\s\S]*?)(?=\n===|$)/);
+  const styleGuide = styleMatch ? styleMatch[0] : "";
+  if (styleGuide) console.log(`[ParamExtractor:Email] ✅ Found style profile in context!`);
+
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", `You are writing an email AS the user (sender: "{sender_name}"). 
 Write it like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
 Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
 
+${styleGuide ? `
+🎯 USER'S ACTUAL COMMUNICATION STYLE (from their WhatsApp chats):
+${styleGuide}
+
+USE THIS STYLE! Write the email exactly like the user would write it themselves — same pet names, same phrases, same emoji style, same language. The email should feel like the user wrote it, not an AI.
+` : ""}
+
 ✍️ WRITING STYLE RULES:
-1. Write like a real person texting/emailing a friend or colleague
+1. ${styleGuide ? "MATCH the user's communication style shown above — their pet names, phrases, emoji usage, language, and tone" : "Write like a real person texting/emailing a friend or colleague"}
 2. Use the SAME LANGUAGE the user chats in. If user speaks Hinglish → write Hinglish email. If English → English.
 3. Keep it SHORT and natural. No corporate jargon like "I hope this email finds you well"
 4. Sign off with the sender's name: "{sender_name}"
