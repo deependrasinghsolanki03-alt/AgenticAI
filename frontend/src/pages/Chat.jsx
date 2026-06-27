@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import MinionCharacter from '../components/MinionCharacter';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useSocket } from '../hooks/useSocket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -36,6 +37,7 @@ function MarkdownMessage({ content }) {
 
 export default function Chat() {
   const { user, signOut } = useAuth();
+  const { connect: connectSocket, sendChat, isConnected: wsConnected, useWebSocket, setUseWebSocket } = useSocket();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -302,6 +304,7 @@ export default function Chat() {
       }
     };
     loadSessions();
+    connectSocket(); // Pre-connect WebSocket
   }, [user, sessionsLoaded]);
 
   // Load messages for a session
@@ -446,6 +449,52 @@ export default function Chat() {
       const token = session?.access_token;
       const providerToken = session?.provider_token;
       if (!token) throw new Error('No valid session. Please sign in again.');
+
+      // ── WebSocket path ──
+      if (useWebSocket && wsConnected) {
+        const fileData = attachment ? { name: attachment.name, type: attachment.type, data: attachment.data } : null;
+        setAttachment(null);
+
+        sendChat(trimmed, activeSessionId, fileData, {
+          onStatus: (payload) => {
+            setAgentStatus(payload.detail || 'Processing...');
+            const icon = payload.stage === 'memory' ? '🧠' : payload.stage === 'planning' ? '📋' : '🔍';
+            setThinkingSteps(prev => [...prev, { icon, text: payload.detail || 'Processing...', done: false }]);
+          },
+          onTool: (payload) => {
+            setAgentStatus(`Running Tool: ${payload.name || 'unknown'}`);
+            setThinkingSteps(prev => [...prev, { icon: '⚙️', text: `Tool: ${payload.name}`, done: false }]);
+          },
+          onConfirm: (payload) => {
+            setPendingConfirm({ action_id: payload.action_id, tool: payload.tool, args: payload.args });
+          },
+          onDone: (payload) => {
+            setThinkingSteps(prev => prev.map(s => ({ ...s, done: true })));
+            const assistantMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: payload.response || 'No response received.',
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, assistantMessage]);
+            saveMessageToDB('assistant', assistantMessage.content);
+            setIsLoading(false);
+            setAgentStatus('');
+            setTimeout(() => setThinkingSteps([]), 500);
+          },
+          onError: (message) => {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(), role: 'assistant',
+              content: `⚠️ Error: ${message}`, timestamp: new Date(), isError: true,
+            }]);
+            setIsLoading(false);
+            setAgentStatus('');
+          },
+        });
+        return; // WebSocket handled it
+      }
+
+      // ── SSE path (default) ──
 
       const headers = {
         'Content-Type': 'application/json',
@@ -797,6 +846,16 @@ export default function Chat() {
               <span className="status-dot" />
               Online
             </span>
+          </div>
+          <div className="ws-toggle-area">
+            <button
+              className={`ws-toggle ${useWebSocket ? 'ws-toggle-active' : ''}`}
+              onClick={() => setUseWebSocket(!useWebSocket)}
+              title={useWebSocket ? 'Using WebSocket (click for SSE)' : 'Using SSE (click for WebSocket)'}
+            >
+              {useWebSocket ? '🌐 WS' : '📡 SSE'}
+              <span className={`ws-dot ${useWebSocket && wsConnected ? 'ws-dot-connected' : ''}`} />
+            </button>
           </div>
         </header>
 

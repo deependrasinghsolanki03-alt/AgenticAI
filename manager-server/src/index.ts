@@ -14,6 +14,8 @@ import { initEmbeddingModel } from "./services/embedding.js";
 import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
+import { createServer } from "http";
+import { initSocketServer } from "./controllers/socketHandler.js";
 
 // Rate Limiters
 const chatLimiter = rateLimit({
@@ -34,6 +36,7 @@ const apiLimiter = rateLimit({
 });
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
 const allowedOrigins = [
@@ -131,16 +134,20 @@ async function boot() {
   try {
     initKeyRotator();
     await initEmbeddingModel();
-    app.listen(PORT, () => {
-      console.log(`\n🚀 AgenticAI Manager v2 is live on http://localhost:${PORT}`);
+    // Initialize Socket.io on the HTTP server
+    const io = initSocketServer(httpServer);
+    httpServer.listen(PORT, () => {
+      console.log(`\n🚀 AgenticAI Manager v3 is live on http://localhost:${PORT}`);
       console.log(`   ├─ Health:     GET  /api/health`);
       console.log(`   ├─ Chat (SSE): POST /api/chat`);
+      console.log(`   ├─ Chat (WS):  Socket.io /socket.io/`);
       console.log(`   ├─ Embed:      POST /api/embed (internal)`);
       console.log(`   └─ Tokens:     POST /api/auth/save-tokens`);
       console.log(`\n   🎯 Planner:    llama-3.1-8b-instant`);
       console.log(`   🔬 Worker:     ${process.env.WORKER_URL}`);
       console.log(`   🔤 Embedding:  Xenova/all-MiniLM-L6-v2 (384-dim)`);
       console.log(`   🔒 Auth:       Supabase JWT + Google refresh_token`);
+      console.log(`   🌐 Socket.io:  WebSocket + polling fallback`);
       console.log(`   ⏰ Scheduler:  Background task runner (60s interval)\n`);
       startScheduler();
     });

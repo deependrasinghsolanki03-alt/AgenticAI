@@ -26,6 +26,7 @@
     "express-rate-limit": "^8.5.2",
     "googleapis": "^173.0.0",
     "langchain": "^1.4.4",
+    "socket.io": "^4.8.3",
     "typescript": "^6.0.3",
     "zod": "^4.4.3"
   },
