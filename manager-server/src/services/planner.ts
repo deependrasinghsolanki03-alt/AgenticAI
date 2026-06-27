@@ -799,7 +799,25 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
       }
     }
     
-    // 2. FALLBACK: Match by relationship keyword in instruction
+    // 2. Match by contact NAME in instruction (e.g. "Berry ko email karo")
+    if (!styleGuide) {
+      const nameMatch = personalizedProfiles.find(p => 
+        instrLower.includes(p.contact_name.toLowerCase()) || 
+        (userMessage && userMessage.toLowerCase().includes(p.contact_name.toLowerCase()))
+      );
+      if (nameMatch) {
+        styleGuide = `STYLE FOR ${nameMatch.relationship} (${nameMatch.contact_name}, ${nameMatch.contact_email}):\n${nameMatch.style_text}`;
+        // Auto-fill email from profile if no real email found
+        if (!contextEmail && nameMatch.contact_email) {
+          contextEmail = nameMatch.contact_email;
+          console.log(`[ParamExtractor:Email] ✅ MATCHED by name: "${nameMatch.contact_name}" → auto-filled email: ${contextEmail}`);
+        } else {
+          console.log(`[ParamExtractor:Email] ✅ MATCHED by name: "${nameMatch.contact_name}"`);
+        }
+      }
+    }
+
+    // 3. FALLBACK: Match by relationship keyword in instruction
     if (!styleGuide) {
       const relationshipKeywords = ["girlfriend", "gf", "boyfriend", "bf", "wife", "biwi", "husband", "love", "babe", "jaanu", "friend", "dost", "boss", "mom", "maa", "dad", "papa"];
       for (const keyword of relationshipKeywords) {
@@ -807,7 +825,12 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
           const match = personalizedProfiles.find(p => p.relationship.toLowerCase().includes(keyword));
           if (match) {
             styleGuide = `STYLE FOR ${match.relationship} (${match.contact_name}, ${match.contact_email}):\n${match.style_text}`;
-            console.log(`[ParamExtractor:Email] ✅ MATCHED by relationship: "${keyword}" → ${match.contact_name}`);
+            if (!contextEmail && match.contact_email) {
+              contextEmail = match.contact_email;
+              console.log(`[ParamExtractor:Email] ✅ MATCHED by relationship: "${keyword}" → auto-filled email: ${contextEmail}`);
+            } else {
+              console.log(`[ParamExtractor:Email] ✅ MATCHED by relationship: "${keyword}" → ${match.contact_name}`);
+            }
             break;
           }
         }
