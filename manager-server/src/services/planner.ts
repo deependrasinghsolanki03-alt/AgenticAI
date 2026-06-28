@@ -780,7 +780,7 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
     !e.includes("example.com") && !e.includes("placeholder") && !e.includes("test.com") &&
     e !== senderEmail
   );
-  const contextEmail = realEmails.length > 0 ? realEmails[0] : "";
+  let contextEmail = realEmails.length > 0 ? realEmails[0] : "";
   console.log(`[ParamExtractor:Email] Recipient: ${contextEmail} | Sender: ${senderName}`);
 
   // ── Style matching: EMAIL-FIRST → relationship → context fallback ──
