@@ -857,6 +857,11 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
     }
   }
 
+  // Timestamp + seed for variety
+  const now = new Date();
+  const timeContext = now.toLocaleString("en-IN", { hour: "numeric", minute: "numeric", hour12: true, weekday: "long" });
+  const randomSeed = Math.floor(Math.random() * 1000);
+
   // Random topic/mood picker — forces different content each email
   const morningTopics = [
     "Tell her about a dream you had about her",
