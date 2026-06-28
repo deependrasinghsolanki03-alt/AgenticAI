@@ -909,13 +909,25 @@ Output ONLY valid JSON.`],
   ]);
 
   try {
-    // Higher temperature for personalized emails = more variety
-    const llm = new ChatGroq({ model: LLM_MODEL, apiKey: getNextKey(), temperature: styleGuide ? 0.7 : 0.3, maxTokens: 1024 });
+    // Higher temperature for personalized emails = max variety
+    const llm = new ChatGroq({ model: LLM_MODEL, apiKey: getNextKey(), temperature: styleGuide ? 0.85 : 0.3, maxTokens: 1024 });
+    
+    // Strip previous email outputs from context to prevent copy-paste patterns
+    let cleanContext = (context || "").substring(0, 1000);
+    cleanContext = cleanContext.replace(/Email Ready.*?Awaiting.*?\n/gi, "")
+      .replace(/Good morning baby.*?\n/gi, "")
+      .replace(/Message Preview:.*?\n/gi, "")
+      .replace(/📧.*?Subject:.*?\n/gi, "")
+      .replace(/Email sent to.*?\n/gi, "")
+      .replace(/Action Rejected.*?\n/gi, "")
+      .replace(/Action Approved.*?\n/gi, "")
+      .trim();
+    
     const result = await prompt.pipe(llm).invoke({
       dep_data: depData.substring(0, 2000),
       instruction,
       user_msg: userMessage,
-      context: (context || "").substring(0, 1000),
+      context: cleanContext,
       context_email: contextEmail,
       sender_name: senderName,
     });
