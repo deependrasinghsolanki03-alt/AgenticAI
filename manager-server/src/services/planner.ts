@@ -857,31 +857,30 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
     }
   }
 
+  // Add timestamp for variety — prevents LLM from generating same email
+  const now = new Date();
+  const timeContext = now.toLocaleString("en-IN", { hour: "numeric", minute: "numeric", hour12: true, weekday: "long" });
+  const randomSeed = Math.floor(Math.random() * 1000);
+
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", `You are writing an email AS the user (sender: "{sender_name}"). 
+Current time: ${timeContext} | Seed: ${randomSeed}
 
 Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
 
 ${styleGuide ? `
-🚨🚨🚨 CRITICAL — PERSONALIZED STYLE PROFILE DETECTED 🚨🚨🚨
-You MUST write this email EXACTLY like the user writes. NOT like an AI. NOT like a formal email. 
-COPY THEIR EXACT PATTERNS from the profile below:
+🚨 PERSONALIZED STYLE PROFILE:
+Follow the user's communication PATTERNS from the profile below, but write FRESH and UNIQUE content every time.
 
 ${styleGuide}
 
-⚠️ MANDATORY RULES FOR THIS EMAIL:
-1. USE ONLY the pet names from the profile above — do NOT invent new ones that aren't in the profile
-2. USE the greeting style from the profile — copy it exactly
-3. WRITE SHORT — match the message length from the profile. If profile says "short messages", write 2-4 SHORT sentences max, NOT paragraphs
-4. USE the SAME language mix from the profile — if it says Hinglish, write Hinglish
-5. USE the signature phrases and farewell style from the profile — copy them exactly
-6. DO NOT sign off formally like "Pyaar se, [Name]" — use the farewell pattern from the profile
-7. DO NOT write formal/poetic language — match the casual tone in the profile
-8. DO NOT write long paragraphs — keep it SHORT like the user's actual messages
-
-⚠️ BAD EXAMPLE (do NOT write like this):
-"Good evening, mere pyaar! Aaj ka din khatam ho gaya, lekin main tumhare saath hoon. Tumhare din ki shuruwat karein aur apne sapnon ko poora karne ke liye taiyaar ho jao..." 
-(THIS IS WRONG - too formal, too long, invented pet names, not matching the profile)
+⚠️ RULES:
+1. Follow the pet names, greeting style, tone, and sign-off patterns from the profile
+2. If the profile has EXAMPLE emails — they are REFERENCE ONLY for structure and tone. Do NOT copy their content. Write completely NEW sentences each time
+3. Write UNIQUE, CREATIVE content based on the user's INSTRUCTION — every email must be DIFFERENT
+4. Match the current time of day (${timeContext}) in your greeting — morning greeting for morning, evening for evening, etc.
+5. Keep the language mix matching the profile
+6. Keep the email 4-8 sentences — not too short, not too long
 ` : `
 Write like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
@@ -910,7 +909,8 @@ Output ONLY valid JSON.`],
   ]);
 
   try {
-    const llm = create8B(1024);
+    // Higher temperature for personalized emails = more variety
+    const llm = new ChatGroq({ model: LLM_MODEL, apiKey: getNextKey(), temperature: styleGuide ? 0.7 : 0.3, maxTokens: 1024 });
     const result = await prompt.pipe(llm).invoke({
       dep_data: depData.substring(0, 2000),
       instruction,
