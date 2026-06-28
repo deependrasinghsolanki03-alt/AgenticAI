@@ -857,50 +857,76 @@ async function extractEmailParams(instruction: string, depOutputs: Record<string
     }
   }
 
-  // Add timestamp for variety — prevents LLM from generating same email
-  const now = new Date();
-  const timeContext = now.toLocaleString("en-IN", { hour: "numeric", minute: "numeric", hour12: true, weekday: "long" });
-  const randomSeed = Math.floor(Math.random() * 1000);
+  // Random topic/mood picker — forces different content each email
+  const morningTopics = [
+    "Tell her about a dream you had about her",
+    "Talk about how peaceful the morning feels and you wish she was here",
+    "Tell her you're excited about something happening today",
+    "Ask about her plans for today and share yours",
+    "Compliment something specific about her personality",
+    "Tell her something funny that happened yesterday",
+    "Share how you feel right now in this moment",
+    "Tell her what you love most about mornings because of her",
+    "Talk about a future plan or date you want to do together",
+    "Tell her about a song or movie that reminded you of her"
+  ];
+  const eveningTopics = [
+    "Tell her about your day and ask about hers",
+    "Share something interesting that happened today",
+    "Tell her you're looking forward to talking tonight",
+    "Express how the day felt long without her",
+    "Talk about something you want to do together this weekend",
+    "Tell her about something that made you smile today",
+    "Ask how her day went and if anything bothered her",
+    "Share a random thought you had about her during the day",
+    "Tell her about something you learned today",
+    "Talk about how you're unwinding and wish she was there"
+  ];
+  const genericTopics = [
+    "Write about how she makes your life better",
+    "Share a random sweet memory you have of her",
+    "Tell her something you appreciate about her",
+    "Express a feeling you haven't shared before",
+    "Talk about something you both enjoy doing together",
+    "Tell her about something you're grateful for today",
+    "Share an inside joke or reference something personal",
+    "Tell her how proud you are of her"
+  ];
+
+  const hour = now.getHours();
+  const topicPool = hour < 12 ? morningTopics : hour < 18 ? eveningTopics : genericTopics;
+  const randomTopic = topicPool[Math.floor(Math.random() * topicPool.length)];
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", `You are writing an email AS the user (sender: "{sender_name}"). 
-Current time: ${timeContext} | Seed: ${randomSeed}
+Current time: ${timeContext} | Variation: ${randomSeed}
 
-Output JSON: {{"to":"real@email.com","subject":"Short natural subject","body":"Human-written email"}}
+Output JSON: {{"to":"real@email.com","subject":"Short creative subject","body":"Human-written email"}}
 
 ${styleGuide ? `
-🚨 PERSONALIZED STYLE PROFILE:
-Follow the user's communication PATTERNS from the profile below, but write FRESH and UNIQUE content every time.
-
+PERSONALITY PROFILE (follow the tone and pet names, but write ORIGINAL content):
 ${styleGuide}
 
-⚠️ RULES:
-1. Follow the pet names, greeting style, tone, and sign-off patterns from the profile
-2. If the profile has EXAMPLE emails — they are REFERENCE ONLY for structure and tone. Do NOT copy their content. Write completely NEW sentences each time
-3. Write UNIQUE, CREATIVE content based on the user's INSTRUCTION — every email must be DIFFERENT
-4. Match the current time of day (${timeContext}) in your greeting — morning greeting for morning, evening for evening, etc.
-5. Keep the language mix matching the profile
-6. Keep the email 4-8 sentences — not too short, not too long
+🎯 TODAY'S EMAIL THEME: ${randomTopic}
+Use this theme as inspiration for the email content. Be creative and natural.
+
+RULES:
+1. Use pet names and sign-off style from the profile
+2. Write about the THEME above — make it the main topic of the email
+3. Every email MUST be completely DIFFERENT from any previous email
+4. Match time of day: ${timeContext}
+5. Write 4-8 natural sentences
+6. Be genuine and heartfelt — like a real person who truly cares
 ` : `
 Write like a REAL HUMAN — casual, warm, natural. NOT like a bot or corporate template.
 
-✍️ WRITING STYLE RULES:
+RULES:
 1. Write like a real person texting/emailing
 2. Keep it SHORT and natural. No corporate jargon
 3. Sign off with the sender's name: "{sender_name}"
-4. TONE RULES:
-   - If instruction mentions girlfriend/GF/boyfriend → romantic/sweet
-   - If instruction is professional → friendly but professional
-   - DEFAULT = friendly and casual
+4. TONE: Match the instruction — romantic if for partner, professional if for work
 5. Include ALL actual data from previous tasks
 `}
-
-🚨 NEVER:
-- Use placeholder emails like girlfriend@example.com
-- Use placeholder text like [previous task 1]
-- Write robotic AI-sounding text
-- Write overly formal corporate emails
-${styleGuide ? "- Write long paragraphs when user's style is short messages\n- Invent pet names the user doesn't actually use\n- Write formal Hindi when user writes casual Hinglish" : ""}
 
 Known recipient email: {context_email}
 
