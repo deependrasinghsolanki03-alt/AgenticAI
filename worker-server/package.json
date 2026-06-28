@@ -12,18 +12,18 @@
     "@langchain/core": "^1.1.48",
     "@langchain/groq": "^1.2.1",
     "@mozilla/readability": "^0.5.0",
-    "@pinecone-database/pinecone": "^7.2.0",
+    "@pinecone-database/pinecone": "^5.1.2",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsdom": "^21.1.0",
+    "@types/node": "^25.9.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsdom": "^25.0.0",
     "langchain": "^1.4.4",
-    "zod": "^4.4.3",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/jsdom": "^21.1.0",
-    "@types/node": "^25.9.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "tsx": "^4.22.4"

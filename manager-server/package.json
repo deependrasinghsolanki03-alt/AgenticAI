@@ -14,7 +14,7 @@
     "@langchain/core": "^1.1.48",
     "@langchain/groq": "^1.2.1",
     "@langchain/pinecone": "^1.0.3",
-    "@pinecone-database/pinecone": "^7.2.0",
+    "@pinecone-database/pinecone": "^5.1.2",
     "@supabase/supabase-js": "^2.108.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

@@ -109,13 +109,15 @@ RULE 3 — IMMEDIATE EMAIL (no future time):
   → emailer
   → instruction mein recipient + content include karo from context
 
-RULE 4 — CALENDAR (immediate):
-  Keywords: "events dikhao/list/show", "events delete/hatao/remove", "calendar mein add"
+RULE 4 — CALENDAR (immediate — ONLY when user EXPLICITLY asks):
+  Keywords: "calendar mein add/daal", "events dikhao/list/show", "events delete/hatao/remove", "event banao/create"
   → scheduler
+  ⚠️ ONLY use scheduler if user's message contains calendar/event related words. NEVER auto-add calendar events unless explicitly asked.
 
-RULE 5 — RESEARCH:
-  Keywords: "topics/concepts/course/padhai nikalo", "search karo", "kya hai", "news", "weather"
-  → researcher
+RULE 5 — RESEARCH (information only — do NOT chain with calendar):
+  Keywords: "topics/concepts/course/padhai nikalo", "search karo", "kya hai", "news", "weather", "sikhna hai", "batao", "explain"
+  → researcher (ONLY researcher — do NOT add scheduler/calendar unless user explicitly asks)
+  ⚠️ If user says "React sikhna hai" or "topics batao" → ONLY use researcher. Do NOT create calendar events automatically.
 
 RULE 6 — MEMORY RECALL:
   Keywords: "yaad hai", "pehle kya bola", "do you remember", "memory mein search"
@@ -171,7 +173,10 @@ RULE 8 — EVERYTHING ELSE:
 "kal ke events dikhao"
 {{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"List tomorrow's calendar events","depends_on":[]}}]}}
 
-"React topics nikalo aur calendar mein add karo 3-4 PM"
+"React sikhna hai mujhe topics batao"
+{{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find beginner-friendly React topics and learning roadmap","depends_on":[]}}]}}
+
+"React topics nikalo aur calendar mein add karo 3-4 PM" (user EXPLICITLY said "calendar mein add")
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
