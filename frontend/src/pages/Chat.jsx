@@ -871,8 +871,8 @@ export default function Chat() {
                 {showAddProfile ? '✕ Cancel' : '＋ Add Style Profile'}
               </button>
               {showAddProfile && (
-                <div className="task-card" style={{ padding: '10px' }}>
-                  <select value={newProfile.relationship} onChange={e => setNewProfile({...newProfile, relationship: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px' }}>
+                <div className="task-card" style={{ padding: '12px' }}>
+                  <select value={newProfile.relationship} onChange={e => setNewProfile({...newProfile, relationship: e.target.value})} style={{ width: '100%', padding: '8px', marginBottom: '6px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: '#1a1a2e', color: '#fff', fontSize: '12px', outline: 'none', cursor: 'pointer', appearance: 'auto' }}>
                     <option value="girlfriend">💕 Girlfriend</option>
                     <option value="boyfriend">💕 Boyfriend</option>
                     <option value="wife">💍 Wife</option>
@@ -884,10 +884,10 @@ export default function Chat() {
                     <option value="colleague">🏢 Colleague</option>
                     <option value="other">📧 Other</option>
                   </select>
-                  <input type="text" placeholder="Contact name (e.g. Divyansh)" value={newProfile.contact_name} onChange={e => setNewProfile({...newProfile, contact_name: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px', boxSizing: 'border-box' }} />
-                  <input type="email" placeholder="Contact email (optional)" value={newProfile.contact_email} onChange={e => setNewProfile({...newProfile, contact_email: e.target.value})} style={{ width: '100%', padding: '6px', marginBottom: '6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '11px', boxSizing: 'border-box' }} />
-                  <textarea placeholder="Paste style profile here...&#10;(from local-style-extractor output)" value={newProfile.style_text} onChange={e => setNewProfile({...newProfile, style_text: e.target.value})} rows={5} style={{ width: '100%', padding: '6px', marginBottom: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '10px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }} />
-                  <button onClick={saveStyleProfile} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', fontWeight: '600', fontSize: '11px', cursor: 'pointer' }}>💾 Save Profile</button>
+                  <input type="text" placeholder="Contact name" value={newProfile.contact_name} onChange={e => setNewProfile({...newProfile, contact_name: e.target.value})} style={{ width: '100%', padding: '8px', marginBottom: '6px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} />
+                  <input type="email" placeholder="Contact email" value={newProfile.contact_email} onChange={e => setNewProfile({...newProfile, contact_email: e.target.value})} style={{ width: '100%', padding: '8px', marginBottom: '6px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }} />
+                  <textarea placeholder="Paste your style profile here..." value={newProfile.style_text} onChange={e => setNewProfile({...newProfile, style_text: e.target.value})} rows={6} style={{ width: '100%', padding: '8px', marginBottom: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: '11px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: '1.5' }} />
+                  <button onClick={saveStyleProfile} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', fontWeight: '600', fontSize: '12px', cursor: 'pointer', letterSpacing: '0.3px' }}>💾 Save Profile</button>
                 </div>
               )}
               {styleProfiles.length === 0 && !showAddProfile ? (
