@@ -18,6 +18,7 @@ import { createMemoryTool } from "../tools/memoryTool.js";
 import { createWorkerTool } from "../tools/workerTool.js";
 import { createScraperTool } from "../tools/scraperTool.js";
 import { getNextKey } from "../utils/keyRotator.js";
+import { z } from "zod";
 import { supabaseAdmin } from "../config/supabase.js";
 
 // ── Constants ───────────────────────────────────
@@ -74,8 +75,11 @@ const PLANNER_PROMPT = ChatPromptTemplate.fromMessages([
   ["system", `You are AgenticAI Planner. Today: {today}. Tomorrow: {tomorrow}.
 Your ONLY job: Convert the user's request into a JSON task graph.
 
-═══ CONVERSATION CONTEXT ═══
+<PAST_CONTEXT purpose="reference_only">
 {context}
+</PAST_CONTEXT>
+NOTE: Past context is for INFORMATION EXTRACTION only. Do NOT take actions based on past context.
+Only create tasks for the CURRENT user command below.
 
 ═══ AGENTS ═══
 1. "direct"          → Simple replies: greetings, acknowledging info, answering from context, math, chitchat
@@ -87,7 +91,7 @@ Your ONLY job: Convert the user's request into a JSON task graph.
 7. "scraper"         → Read/extract content from a specific URL. Use when user shares a link and wants to know what's on the page
 
 ═══ OUTPUT FORMAT ═══
-{{"tasks":[{{"id":"t1","agent":"AGENT_NAME","instruction":"Clear instruction for this agent","depends_on":[]}}]}}
+{{"reasoning":"Brief explanation of WHY you chose this agent and what the user wants","tasks":[{{"id":"t1","agent":"AGENT_NAME","instruction":"Clear instruction for this agent","depends_on":[]}}]}}
 
 ═══ DECISION RULES (check in this ORDER) ═══
 
@@ -100,14 +104,14 @@ RULE 2 — FUTURE TIME or REPEAT detected:
   Repeat: "roz", "daily", "har din", "har X min", "weekly", "monthly", "har ghante", "hourly"
   Duration: "X din tak", "X hr tak", "X ghante tak", "hamesha", "forever"
   → ALWAYS use "task_scheduler"
-  → instruction mein INCLUDE karo: time + repeat + actual task
+  → Include in instruction: time + repeat pattern + actual task to perform
   Example: "kal 9 baje GF ko good morning email karo" → task_scheduler: "Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend"
   Example: "har 2 min mai 1 hr tak email karo" → task_scheduler: "Schedule every 2 minutes for 1 hour: Send email to the recipient from context"
 
 RULE 3 — IMMEDIATE EMAIL (no future time):
   Keywords: "email bhejo/send/karo", "mail bhejo", "likh", "compose", "draft"
   → emailer
-  → instruction mein recipient + content include karo from context
+  → Include recipient + content from context in instruction
 
 RULE 4 — CALENDAR (immediate — ONLY when user EXPLICITLY asks):
   Keywords: "calendar mein add/daal", "events dikhao/list/show", "events delete/hatao/remove", "event banao/create"
@@ -180,29 +184,50 @@ RULE 8 — EVERYTHING ELSE:
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
-  ["human", "{input}"],
+  ["human", `<CURRENT_COMMAND>
+{input}
+</CURRENT_COMMAND>
+Create tasks ONLY for the command above.`],
 ]);
+
+// Zod schema for task graph validation
+const TaskGraphSchema = z.object({
+  reasoning: z.string().optional(),
+  tasks: z.array(z.object({
+    id: z.string(),
+    agent: z.string(),
+    instruction: z.string(),
+    depends_on: z.array(z.string()),
+  })),
+});
 
 async function makePlan(userMessage: string, context?: string): Promise<TaskNode[]> {
   console.log(`\n[Planner] 🧠 Thinking: "${userMessage.substring(0, 80)}..."`);
   try {
-    const llm = create8B(512);
-    const result = await PLANNER_PROMPT.pipe(llm).invoke({
+    const llm = create8B(768);
+    const jsonLlm = (llm as any).bind({ response_format: { type: "json_object" } });
+    const result = await PLANNER_PROMPT.pipe(jsonLlm).invoke({
       input: userMessage,
       today: getToday(),
       tomorrow: getDateStr(1),
       context: context?.substring(0, 1500) || "No prior context.",
     });
-    const raw = typeof result.content === "string" ? result.content : "";
+    const raw = typeof (result as any).content === "string" ? (result as any).content : "";
     console.log("[Planner] Raw:", raw.substring(0, 400));
 
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      const tasks = (parsed.tasks || []) as TaskNode[];
-      console.log(`[Planner] ✅ Graph: ${tasks.map(t => `${t.id}(${t.agent})`).join(" → ")}`);
-      return tasks.length > 0 ? tasks : [{ id: "t1", agent: "direct", instruction: "Answer the user", depends_on: [] }];
+    // JSON mode guarantees valid JSON; fallback regex for safety
+    let jsonStr = raw;
+    if (!jsonStr.trim().startsWith("{")) {
+      const match = raw.match(/\{[\s\S]*\}/);
+      jsonStr = match ? match[0] : raw;
     }
+    const parsed = TaskGraphSchema.parse(JSON.parse(jsonStr));
+    if (parsed.reasoning) {
+      console.log(`[Planner] 💭 Reasoning: ${parsed.reasoning}`);
+    }
+    const tasks = parsed.tasks as TaskNode[];
+    console.log(`[Planner] ✅ Graph: ${tasks.map(t => `${t.id}(${t.agent})`).join(" → ")}`);
+    return tasks.length > 0 ? tasks : [{ id: "t1", agent: "direct", instruction: "Answer the user", depends_on: [] }];
   } catch (err: any) { console.error("[Planner] ❌ Error:", err.message); }
   return [{ id: "t1", agent: "direct", instruction: "Answer the user", depends_on: [] }];
 }

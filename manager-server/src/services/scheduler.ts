@@ -75,6 +75,29 @@ async function executeTask(task: any): Promise<void> {
 
     console.log(`[Scheduler] ✅ Task ${task.id} done: ${result.output.substring(0, 100)}...`);
 
+    // ── AUTO-APPROVE: Scheduled tasks have pre-approval from user ──
+    // If the planner created pending_actions (e.g., emails), approve them automatically
+    if (result.pendingActions && result.pendingActions.length > 0) {
+      console.log(`[Scheduler] 🔑 Auto-approving ${result.pendingActions.length} pending action(s) from scheduled task...`);
+      for (const pa of result.pendingActions) {
+        try {
+          if (pa.tool === "gmail_send") {
+            const args = pa.args as { to: string; subject: string; body: string };
+            const gmailTool = (await import("../tools/gmailTool.js")).createGmailTool(googleAuthClient as any);
+            await gmailTool.invoke({ action: "send", to: args.to, subject: args.subject, body: args.body });
+            console.log(`[Scheduler] 📧 Auto-sent email to ${args.to}`);
+          }
+          // Mark as approved in DB
+          await supabaseAdmin
+            .from("pending_actions")
+            .update({ status: "approved", resolved_at: new Date().toISOString() })
+            .eq("id", pa.id);
+        } catch (autoErr: any) {
+          console.error(`[Scheduler] ❌ Auto-approve failed for ${pa.id}:`, autoErr.message);
+        }
+      }
+    }
+
     // Handle recurring vs one-time
     if (task.repeat_pattern) {
       const nextTime = getNextRunTime(new Date(task.scheduled_time), task.repeat_pattern);
