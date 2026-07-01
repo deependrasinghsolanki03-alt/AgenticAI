@@ -100,7 +100,7 @@ RULE 1 — TASK MANAGEMENT (highest priority):
   "scheduled tasks dikhao/list/show" → task_scheduler, instruction: "List all pending scheduled tasks"
 
 RULE 2 — FUTURE TIME or REPEAT detected:
-  Keywords: "kal", "parso", "tomorrow", "next week", "agle", "9 AM", "9 baje", "subah", "shaam", "raat"
+  Time keywords: "kal", "parso", "tomorrow", "next week", "agle", "9 AM", "9 baje", "subah", "shaam", "raat", "baad", "later", "X min baad", "X ghante baad", "X minute baad", "thodi der baad", "after X min", "in X minutes"
   Repeat: "roz", "daily", "har din", "har X min", "weekly", "monthly", "har ghante", "hourly"
   Duration: "X din tak", "X hr tak", "X ghante tak", "hamesha", "forever"
   → ALWAYS use "task_scheduler"
@@ -134,6 +134,8 @@ RULE 7 — INFORMATION SHARING:
 RULE 8 — EVERYTHING ELSE:
   Greetings, questions, chat, math, opinions
   → direct
+  ⚠️ CRITICAL: "direct" agent can ONLY chat/respond. It CANNOT send emails, create events, or perform any actions.
+  If user asks to SEND/DO something → use the correct tool agent (emailer/scheduler/task_scheduler). NEVER route action requests to "direct".
 
 ═══ IMPORTANT NOTES ═══
 • Check CONTEXT first — if user says "girlfriend" and context has her email, USE that email in instruction
@@ -182,6 +184,12 @@ RULE 8 — EVERYTHING ELSE:
 
 "React topics nikalo aur calendar mein add karo 3-4 PM" (user EXPLICITLY said "calendar mein add")
 {{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
+
+"5 min baad Berry ko good evening email karna" (FUTURE TIME — "baad" detected)
+{{"reasoning":"User wants to send email AFTER 5 minutes. 'baad' = future time, so task_scheduler is needed.","tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule after 5 minutes: Send a good evening email to Berry (girlfriend) at the email from context","depends_on":[]}}]}}
+
+"Berry ko email bhejo" (NO future time — immediate)
+{{"reasoning":"User wants to send email NOW. No future time keyword. Using emailer.","tasks":[{{"id":"t1","agent":"emailer","instruction":"Send email to Berry (girlfriend) at the email from context","depends_on":[]}}]}}
 
 Output ONLY valid JSON. No explanation.`],
   ["human", `<CURRENT_COMMAND>
