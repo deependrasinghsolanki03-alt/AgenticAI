@@ -131,43 +131,125 @@ const TaskGraphSchema = z.object({
   })),
 });
 
+// ── Deterministic Agent Router (Pure TypeScript — NO LLM) ──
+// Agent selection is 100% code-based. Zero hallucination risk.
+// Priority order: Task Mgmt > Future/Scheduled > Email > Calendar > Research > Memory > Info > Direct
+function detectAgent(msg: string): { agent: TaskNode["agent"]; reason: string } {
+  const m = msg.toLowerCase();
+
+  // 1. TASK MANAGEMENT (highest priority)
+  if (/(?:tasks?|scheduled)\s*(?:cancel|hatao|rok|band|stop|delete|remove)/i.test(m) ||
+      /(?:cancel|stop|band|hatao|rok)\s*(?:all\s+)?(?:tasks?|scheduled)/i.test(m)) {
+    return { agent: "task_scheduler", reason: "Task cancel/stop detected" };
+  }
+  if (/(?:scheduled\s+)?tasks?\s*(?:dikhao|list|show|batao|display)/i.test(m) ||
+      /(?:dikhao|show|list|batao)\s*(?:all\s+)?(?:scheduled\s+)?tasks?/i.test(m) ||
+      /(?:mere|my|mujhe)\s+.*(?:scheduled|pending)\s+tasks?/i.test(m)) {
+    return { agent: "task_scheduler", reason: "Task list/show detected" };
+  }
+
+  // 2. FUTURE TIME / SCHEDULED (check BEFORE email — "5 min baad email" = scheduler, not emailer)
+  if (/\b(?:baad|later|kal|parso|tomorrow|next\s+week|agle|hamesha|forever)\b/i.test(m) ||
+      /\b(?:roz|daily|har\s+din|weekly|monthly|hourly|har\s+ghante?)\b/i.test(m) ||
+      /\d+\s*(?:min(?:ute)?s?|hr|hours?|ghante?|din|days?)\s*(?:baad|later|tak|for)/i.test(m) ||
+      /(?:subah|shaam|raat|morning|evening|night)\s*\d/i.test(m) ||
+      /\d+\s*(?:baje|am|pm)\b/i.test(m) ||
+      /\b(?:schedule|thodi\s+der)\b/i.test(m)) {
+    return { agent: "task_scheduler", reason: "Future time/repeat/schedule detected" };
+  }
+
+  // 3. IMMEDIATE EMAIL (no future time keywords present)
+  if (/\b(?:email|mail|e-mail)\b/i.test(m) ||
+      /@(?:gmail|yahoo|outlook|hotmail|proton)\b/i.test(m) ||
+      /\b(?:email\s+id|mail\s+id)\b/i.test(m) ||
+      /\b(?:message|msg)\s+(?:karo|bhejo|send|kar|bhej|likh)\b/i.test(m) ||
+      /\b(?:bhejo|send)\s+(?:a\s+)?(?:email|mail|message|msg)\b/i.test(m) ||
+      /\bko\s+(?:email|mail|message|msg)\b/i.test(m) ||
+      /\b(?:compose|draft)\b/i.test(m)) {
+    return { agent: "emailer", reason: "Immediate email/message detected" };
+  }
+
+  // 4. CALENDAR
+  if (/\b(?:calendar|event|events)\b/i.test(m) ||
+      /(?:events?)\s*(?:dikhao|list|show|add|daal|create|delete|hatao|banao|remove)/i.test(m)) {
+    return { agent: "scheduler", reason: "Calendar/event action detected" };
+  }
+
+  // 5. URL / SCRAPER
+  if (/https?:\/\/[^\s]+/i.test(m) ||
+      /\b(?:is\s+link|is\s+url|is\s+page|is\s+website)\b/i.test(m)) {
+    return { agent: "scraper", reason: "URL/link detected" };
+  }
+
+  // 6. RESEARCH
+  if (/\b(?:research|search|sikhna|sikha|padhai|course|tutorial)\b/i.test(m) ||
+      /\b(?:topics?|concepts?)\s*(?:nikalo|batao|find|list)\b/i.test(m) ||
+      /\b(?:kya\s+hai|what\s+is|how\s+to|explain|difference|compare|advantages?|best)\b/i.test(m) ||
+      /\b(?:news|weather|trending)\b/i.test(m)) {
+    return { agent: "researcher", reason: "Research/learning/search detected" };
+  }
+
+  // 7. MEMORY RECALL
+  if (/\b(?:yaad\s+hai|remember|pehle\s+kya|memory|recall|bola\s+tha|bataya\s+tha)\b/i.test(m)) {
+    return { agent: "memory", reason: "Memory recall detected" };
+  }
+
+  // 8. DEFAULT — everything else is chat
+  return { agent: "direct", reason: "General chat/greeting/question" };
+}
+
+// ── Instruction Generator (8B — ONLY generates instruction text, NOT routing) ──
+async function generateInstruction(userMessage: string, agent: string, context?: string): Promise<string> {
+  try {
+    const llm = create8B(256);
+    const prompt = ChatPromptTemplate.fromMessages([
+      ["system", `You extract task instructions. Agent: "${agent}". 
+Context: ${context?.substring(0, 800) || "None"}
+Write a CLEAR, SHORT instruction for the ${agent} agent. Include any names, emails, times from user message and context.
+Output ONLY the instruction text. No JSON, no explanation.`],
+      ["human", "{input}"],
+    ]);
+    const res = await prompt.pipe(llm).invoke({ input: userMessage });
+    const instruction = typeof res.content === "string" ? res.content.trim() : "";
+    return instruction || userMessage;
+  } catch (err: any) {
+    console.error("[Planner] Instruction gen failed:", err.message);
+    return userMessage; // fallback: use raw user message as instruction
+  }
+}
+
+// ── Multi-step task detection (research + calendar chaining) ──
+function detectChainedTasks(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (/\b(?:research|topics?|nikalo|sikhna)\b/i.test(m) &&
+          /\b(?:calendar|event|add|daal)\b/i.test(m));
+}
+
 async function makePlan(userMessage: string, context?: string): Promise<TaskNode[]> {
   console.log(`\n[Planner] 🧠 Thinking: "${userMessage.substring(0, 80)}..."`);
-  try {
-    // ── Dynamic RAG: Fetch only relevant rules ──
-    const relevantRules = await getRelevantRules(userMessage, 2);
-    const injectedRulesText = formatRulesForPrompt(relevantRules);
-    console.log(`[Planner] 📋 Injected ${relevantRules.length} rules: ${relevantRules.map(r => r.id).join(", ")}`);
 
-    // ── Build lean prompt with only matched rules ──
-    const dynamicPrompt = buildDynamicPrompt(injectedRulesText);
+  // Step 1: DETERMINISTIC routing (TypeScript regex — zero hallucination)
+  const { agent, reason } = detectAgent(userMessage);
+  console.log(`[Planner] 🎯 Detected: ${agent} (${reason})`);
 
-    const llm = create8B(768);
-    const jsonLlm = (llm as any).bind({ response_format: { type: "json_object" } });
-    const result = await dynamicPrompt.pipe(jsonLlm).invoke({
-      input: userMessage,
-      today: getToday(),
-      tomorrow: getDateStr(1),
-      context: context?.substring(0, 1500) || "No prior context.",
-    });
-    const raw = typeof (result as any).content === "string" ? (result as any).content : "";
-    console.log("[Planner] Raw:", raw.substring(0, 400));
+  // Step 2: Check for multi-step chaining (e.g., "research + calendar add")
+  if (detectChainedTasks(userMessage)) {
+    console.log(`[Planner] 🔗 Chained task detected: researcher → scheduler`);
+    const researchInstruction = await generateInstruction(userMessage, "researcher", context);
+    const calendarInstruction = await generateInstruction(userMessage, "scheduler", context);
+    return [
+      { id: "t1", agent: "researcher", instruction: researchInstruction, depends_on: [] },
+      { id: "t2", agent: "scheduler", instruction: calendarInstruction, depends_on: ["t1"] },
+    ];
+  }
 
-    // JSON mode guarantees valid JSON; fallback regex for safety
-    let jsonStr = raw;
-    if (!jsonStr.trim().startsWith("{")) {
-      const match = raw.match(/\{[\s\S]*\}/);
-      jsonStr = match ? match[0] : raw;
-    }
-    const parsed = TaskGraphSchema.parse(JSON.parse(jsonStr));
-    if (parsed.reasoning) {
-      console.log(`[Planner] 💭 Reasoning: ${parsed.reasoning}`);
-    }
-    const tasks = parsed.tasks as TaskNode[];
-    console.log(`[Planner] ✅ Graph: ${tasks.map(t => `${t.id}(${t.agent})`).join(" → ")}`);
-    return tasks.length > 0 ? tasks : [{ id: "t1", agent: "direct", instruction: "Answer the user", depends_on: [] }];
-  } catch (err: any) { console.error("[Planner] ❌ Error:", err.message); }
-  return [{ id: "t1", agent: "direct", instruction: "Answer the user", depends_on: [] }];
+  // Step 3: Generate instruction for the single detected agent
+  const instruction = await generateInstruction(userMessage, agent, context);
+  console.log(`[Planner] 📝 Instruction: "${instruction.substring(0, 100)}..."`);
+
+  const tasks: TaskNode[] = [{ id: "t1", agent, instruction, depends_on: [] }];
+  console.log(`[Planner] ✅ Graph: ${tasks.map(t => `${t.id}(${t.agent})`).join(" → ")}`);
+  return tasks;
 }
 
 
