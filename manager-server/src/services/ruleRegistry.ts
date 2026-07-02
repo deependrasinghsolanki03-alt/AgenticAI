@@ -97,14 +97,15 @@ const PLANNER_RULES: PlannerRule[] = [
   {
     id: "research",
     agent: "researcher",
-    description: "User wants to search, learn, find information — topics nikalo, concepts batao, search karo, kya hai, news, weather, sikhna hai, padhai, explain, course, coding help, programming question",
-    keywords: ["topics", "concepts", "course", "padhai", "search", "kya hai", "news", "weather", "sikhna", "batao", "explain", "sikha", "how to", "what is", "tutorial"],
+    description: "User wants to search, learn, find information, deep research — topics nikalo, concepts batao, search karo, kya hai, news, weather, sikhna hai, padhai, explain, course, coding help, programming question, research karo, deep research, best kya hai, compare karo, difference batao, advantages, architecture kya hai",
+    keywords: ["topics", "concepts", "course", "padhai", "search", "kya hai", "news", "weather", "sikhna", "batao", "explain", "sikha", "how to", "what is", "tutorial", "research", "deep research", "best", "compare", "difference", "advantages", "architecture", "kaise kaam", "find"],
     prompt_snippet: `RULE — RESEARCH (information only — do NOT chain with calendar):
-  Keywords: "topics/concepts/course/padhai nikalo", "search karo", "kya hai", "news", "weather", "sikhna hai", "batao", "explain"
+  Keywords: "topics/concepts/course/padhai nikalo", "search karo", "kya hai", "news", "weather", "sikhna hai", "batao", "explain", "research karo", "deep research", "best kya hai"
   → researcher (ONLY researcher — do NOT add scheduler/calendar unless user explicitly asks)
   ⚠️ If user says "React sikhna hai" or "topics batao" → ONLY use researcher. Do NOT create calendar events automatically.`,
     examples: [
       `"React sikhna hai mujhe topics batao"\n{{"reasoning":"User wants to learn React. Research only, no calendar.","tasks":[{{"id":"t1","agent":"researcher","instruction":"Find beginner-friendly React topics and learning roadmap","depends_on":[]}}]}}`,
+      `"mujhe deep research karke batao ke 8b model ke liye best agentic architecture kya hai"\n{{"reasoning":"User wants deep research on agentic architectures. Using researcher for internet search.","tasks":[{{"id":"t1","agent":"researcher","instruction":"Deep research: Find the best agentic architectures for 8B parameter LLM models, compare approaches, pros and cons","depends_on":[]}}]}}`,
     ],
   },
 
