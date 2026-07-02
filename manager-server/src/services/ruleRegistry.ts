@@ -62,15 +62,18 @@ const PLANNER_RULES: PlannerRule[] = [
   {
     id: "immediate_email",
     agent: "emailer",
-    description: "User wants to send an email right now immediately — email bhejo, mail karo, send email, compose, draft, likh, email send karo, mail bhejo",
-    keywords: ["email", "mail", "bhejo", "send", "compose", "draft", "likh", "gmail"],
+    description: "User wants to send an email or message right now immediately — email bhejo, mail karo, send email, compose, draft, likh, message karo, message bhejo, msg bhejo, email id, @gmail.com, good morning message karo, good evening email karo, email send karo, mail bhejo, GF ko message karo",
+    keywords: ["email", "mail", "bhejo", "send", "compose", "draft", "likh", "gmail", "message karo", "message bhejo", "msg", "email id", "@gmail", "@yahoo", "@outlook", "message"],
     prompt_snippet: `RULE — IMMEDIATE EMAIL (no future time):
-  Keywords: "email bhejo/send/karo", "mail bhejo", "likh", "compose", "draft"
+  Keywords: "email bhejo/send/karo", "mail bhejo", "message karo/bhejo", "likh", "compose", "draft"
+  Triggers: user mentions "email id", "@gmail.com", or asks to send a "message" to someone
   → emailer
   → Include recipient + content from context in instruction
-  ⚠️ ONLY use this if there is NO future/delay time keyword. If user says "5 min baad email karo", use task_scheduler instead.`,
+  ⚠️ If user says "X ko message karo" or "X ko email karo" and provides an email address → this is an EMAIL action, use emailer.
+  ⚠️ ONLY use this if there is NO future/delay time keyword. If "baad/kal/roz" present, use task_scheduler instead.`,
     examples: [
       `"Berry ko email bhejo" (NO future time — immediate)\n{{"reasoning":"User wants to send email NOW. No future time keyword. Using emailer.","tasks":[{{"id":"t1","agent":"emailer","instruction":"Send email to Berry at the email from context","depends_on":[]}}]}}`,
+      `"meri GF ko cute sa good morning message karo uski email id abc@gmail.com"\n{{"reasoning":"User wants to send a message to GF's email. 'message karo' + 'email id' = email action. Using emailer.","tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a cute good morning email to girlfriend at abc@gmail.com","depends_on":[]}}]}}`,
       `"abc@gmail.com ko good morning email karo" (user did NOT say GF)\n{{"reasoning":"Immediate email to specific address.","tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a good morning email to abc@gmail.com","depends_on":[]}}]}}`,
     ],
   },
