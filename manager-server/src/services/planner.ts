@@ -20,6 +20,7 @@ import { createScraperTool } from "../tools/scraperTool.js";
 import { getNextKey } from "../utils/keyRotator.js";
 import { z } from "zod";
 import { supabaseAdmin } from "../config/supabase.js";
+import { getRelevantRules, formatRulesForPrompt } from "./ruleRegistry.js";
 
 // ── Constants ───────────────────────────────────
 const LLM_MODEL = process.env.LLM_MODEL || "llama-3.1-8b-instant";
@@ -68,11 +69,17 @@ interface TaskResult {
 
 
 // ═════════════════════════════════════════════════
-//  PART 1: DAG PLANNER (8B LLM — thinks only)
+//  PART 1: DYNAMIC RAG PLANNER (8B LLM — thinks only)
+//  Rules are injected dynamically from ruleRegistry
 // ═════════════════════════════════════════════════
 
-const PLANNER_PROMPT = ChatPromptTemplate.fromMessages([
-  ["system", `You are AgenticAI Planner. Today: {today}. Tomorrow: {tomorrow}.
+/**
+ * Builds a lean planner prompt with only the relevant rules injected.
+ * This keeps the 8B model focused on 2-3 rules instead of 8+.
+ */
+function buildDynamicPrompt(injectedRules: string): ChatPromptTemplate {
+  return ChatPromptTemplate.fromMessages([
+    ["system", `You are AgenticAI Planner. Today: {today}. Tomorrow: {tomorrow}.
 Your ONLY job: Convert the user's request into a JSON task graph.
 
 <PAST_CONTEXT purpose="reference_only">
@@ -88,115 +95,30 @@ Only create tasks for the CURRENT user command below.
 4. "emailer"         → Gmail: send or search email (IMMEDIATE email actions only — no future time)
 5. "memory"          → Search past conversations/memories (ONLY when user asks "do you remember", "pehle kya bola tha")
 6. "task_scheduler"  → FUTURE or RECURRING tasks: schedule something for later, list scheduled tasks, cancel tasks
-7. "scraper"         → Read/extract content from a specific URL. Use when user shares a link and wants to know what's on the page
+7. "scraper"         → Read/extract content from a specific URL
 
 ═══ OUTPUT FORMAT ═══
 {{"reasoning":"Brief explanation of WHY you chose this agent and what the user wants","tasks":[{{"id":"t1","agent":"AGENT_NAME","instruction":"Clear instruction for this agent","depends_on":[]}}]}}
 
-═══ DECISION RULES (check in this ORDER) ═══
+═══ ACTIVE RULES (use ONLY these to decide) ═══
+${injectedRules}
 
-RULE 1 — TASK MANAGEMENT (highest priority):
-  "tasks cancel/hatao/rok/band/stop karo" → task_scheduler, instruction: "Cancel all pending scheduled tasks"
-  "scheduled tasks dikhao/list/show" → task_scheduler, instruction: "List all pending scheduled tasks"
-
-RULE 2 — FUTURE TIME or REPEAT detected:
-  Time keywords: "kal", "parso", "tomorrow", "next week", "agle", "9 AM", "9 baje", "subah", "shaam", "raat", "baad", "later", "X min baad", "X ghante baad", "X minute baad", "thodi der baad", "after X min", "in X minutes"
-  Repeat: "roz", "daily", "har din", "har X min", "weekly", "monthly", "har ghante", "hourly"
-  Duration: "X din tak", "X hr tak", "X ghante tak", "hamesha", "forever"
-  → ALWAYS use "task_scheduler"
-  → Include in instruction: time + repeat pattern + actual task to perform
-  Example: "kal 9 baje GF ko good morning email karo" → task_scheduler: "Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend"
-  Example: "har 2 min mai 1 hr tak email karo" → task_scheduler: "Schedule every 2 minutes for 1 hour: Send email to the recipient from context"
-
-RULE 3 — IMMEDIATE EMAIL (no future time):
-  Keywords: "email bhejo/send/karo", "mail bhejo", "likh", "compose", "draft"
-  → emailer
-  → Include recipient + content from context in instruction
-
-RULE 4 — CALENDAR (immediate — ONLY when user EXPLICITLY asks):
-  Keywords: "calendar mein add/daal", "events dikhao/list/show", "events delete/hatao/remove", "event banao/create"
-  → scheduler
-  ⚠️ ONLY use scheduler if user's message contains calendar/event related words. NEVER auto-add calendar events unless explicitly asked.
-
-RULE 5 — RESEARCH (information only — do NOT chain with calendar):
-  Keywords: "topics/concepts/course/padhai nikalo", "search karo", "kya hai", "news", "weather", "sikhna hai", "batao", "explain"
-  → researcher (ONLY researcher — do NOT add scheduler/calendar unless user explicitly asks)
-  ⚠️ If user says "React sikhna hai" or "topics batao" → ONLY use researcher. Do NOT create calendar events automatically.
-
-RULE 6 — MEMORY RECALL:
-  Keywords: "yaad hai", "pehle kya bola", "do you remember", "memory mein search"
-  → memory (ONLY for searching past info NOT in current context)
-
-RULE 7 — INFORMATION SHARING:
-  User TELLS you info: "my email is X", "meri GF ka naam Y hai", "remember this", "yaad rakh"
-  → direct (just acknowledge — memory is auto-saved)
-
-RULE 8 — EVERYTHING ELSE:
-  Greetings, questions, chat, math, opinions
-  → direct
-  ⚠️ CRITICAL: "direct" agent can ONLY chat/respond. It CANNOT send emails, create events, or perform any actions.
-  If user asks to SEND/DO something → use the correct tool agent (emailer/scheduler/task_scheduler). NEVER route action requests to "direct".
-
-═══ IMPORTANT NOTES ═══
-• Check CONTEXT first — if user says "girlfriend" and context has her email, USE that email in instruction
-• NEVER invent/guess email addresses — only use emails found in context or user message
-• NEVER assume relationships — if user gives an email, don't assume it's girlfriend/boyfriend/wife/husband
-• Only use words like "girlfriend", "love", "babe", "sweet" in instruction IF user EXPLICITLY said "GF", "girlfriend", "bf", "boyfriend"
-• If user just says "X@gmail.com ko email karo" → instruction = "Send email to X@gmail.com" (NO romantic words)
-• Keep instructions EXACTLY matching what user asked — don't add extra tone/style unless requested
-• When chaining tasks (research → calendar), use depends_on
-• Match user's language in instructions (Hindi → Hindi, English → English)
-
-═══ EXAMPLES ═══
-
-"hello" / "hi" / "kya haal hai"
-{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Greet the user warmly","depends_on":[]}}]}}
-
-"meri girlfriend ka email abc@gmail.com hai"
-{{"tasks":[{{"id":"t1","agent":"direct","instruction":"Acknowledge girlfriend's email is abc@gmail.com, noted","depends_on":[]}}]}}
-
-"GF ko email bhejo" (context has gf email)
-{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a loving email to girlfriend at abc@gmail.com","depends_on":[]}}]}}
-
-"abc@gmail.com ko good morning email karo" (user did NOT say GF)
-{{"tasks":[{{"id":"t1","agent":"emailer","instruction":"Send a good morning email to abc@gmail.com","depends_on":[]}}]}}
-
-"har 2 min mai 1 hr tak abc@gmail.com ko email karo" (user did NOT say GF)
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule every 2 minutes for 1 hour: Send a good morning email to abc@gmail.com","depends_on":[]}}]}}
-
-"kal subah 9 baje GF ko good morning email karo" (user SAID GF)
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule for tomorrow 9 AM: Send a sweet good morning email to girlfriend","depends_on":[]}}]}}
-
-"roz subah 8 baje study reminder email karo, 5 din tak"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule daily at 8 AM for 5 days: Send a study reminder email with motivational message","depends_on":[]}}]}}
-
-"tasks cancel karo" / "scheduled tasks band karo"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Cancel all pending scheduled tasks","depends_on":[]}}]}}
-
-"mere scheduled tasks dikhao"
-{{"tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"List all pending scheduled tasks","depends_on":[]}}]}}
-
-"kal ke events dikhao"
-{{"tasks":[{{"id":"t1","agent":"scheduler","instruction":"List tomorrow's calendar events","depends_on":[]}}]}}
-
-"React sikhna hai mujhe topics batao"
-{{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find beginner-friendly React topics and learning roadmap","depends_on":[]}}]}}
-
-"React topics nikalo aur calendar mein add karo 3-4 PM" (user EXPLICITLY said "calendar mein add")
-{{"tasks":[{{"id":"t1","agent":"researcher","instruction":"Find 3 advanced React topics for study","depends_on":[]}},{{"id":"t2","agent":"scheduler","instruction":"Create calendar events for each topic, 3-4 PM daily starting tomorrow","depends_on":["t1"]}}]}}
-
-"5 min baad Berry ko good evening email karna" (FUTURE TIME — "baad" detected)
-{{"reasoning":"User wants to send email AFTER 5 minutes. 'baad' = future time, so task_scheduler is needed.","tasks":[{{"id":"t1","agent":"task_scheduler","instruction":"Schedule after 5 minutes: Send a good evening email to Berry (girlfriend) at the email from context","depends_on":[]}}]}}
-
-"Berry ko email bhejo" (NO future time — immediate)
-{{"reasoning":"User wants to send email NOW. No future time keyword. Using emailer.","tasks":[{{"id":"t1","agent":"emailer","instruction":"Send email to Berry (girlfriend) at the email from context","depends_on":[]}}]}}
+═══ SAFETY ═══
+• "direct" agent can ONLY chat/respond. It CANNOT send emails, create events, or perform any actions. If user asks to SEND/DO something → use emailer/scheduler/task_scheduler.
+• Check CONTEXT first — if user says "girlfriend" and context has her email, USE that email in instruction.
+• NEVER invent/guess email addresses — only use emails found in context or user message.
+• NEVER assume relationships — only use "girlfriend", "love" etc. IF user EXPLICITLY said "GF", "girlfriend".
+• Keep instructions EXACTLY matching what user asked — don't add extra tone/style unless requested.
+• When chaining tasks (research → calendar), use depends_on.
+• Match user's language in instructions (Hindi → Hindi, English → English).
 
 Output ONLY valid JSON. No explanation.`],
-  ["human", `<CURRENT_COMMAND>
+    ["human", `<CURRENT_COMMAND>
 {input}
 </CURRENT_COMMAND>
 Create tasks ONLY for the command above.`],
-]);
+  ]);
+}
 
 // Zod schema for task graph validation
 const TaskGraphSchema = z.object({
@@ -212,9 +134,17 @@ const TaskGraphSchema = z.object({
 async function makePlan(userMessage: string, context?: string): Promise<TaskNode[]> {
   console.log(`\n[Planner] 🧠 Thinking: "${userMessage.substring(0, 80)}..."`);
   try {
+    // ── Dynamic RAG: Fetch only relevant rules ──
+    const relevantRules = await getRelevantRules(userMessage, 2);
+    const injectedRulesText = formatRulesForPrompt(relevantRules);
+    console.log(`[Planner] 📋 Injected ${relevantRules.length} rules: ${relevantRules.map(r => r.id).join(", ")}`);
+
+    // ── Build lean prompt with only matched rules ──
+    const dynamicPrompt = buildDynamicPrompt(injectedRulesText);
+
     const llm = create8B(768);
     const jsonLlm = (llm as any).bind({ response_format: { type: "json_object" } });
-    const result = await PLANNER_PROMPT.pipe(jsonLlm).invoke({
+    const result = await dynamicPrompt.pipe(jsonLlm).invoke({
       input: userMessage,
       today: getToday(),
       tomorrow: getDateStr(1),

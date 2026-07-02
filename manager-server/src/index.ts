@@ -12,6 +12,7 @@ import { listMemories, deleteMemory } from "./controllers/memoryController.js";
 import { listPendingActions, approveAction, rejectAction } from "./controllers/pendingActionController.js";
 import { listStyleProfiles, saveStyleProfile, deleteStyleProfile } from "./controllers/personalizationController.js";
 import { initEmbeddingModel } from "./services/embedding.js";
+import { initRuleRegistry } from "./services/ruleRegistry.js";
 import { startScheduler } from "./services/scheduler.js";
 import { saveGoogleTokens } from "./config/googleAuth.js";
 import { initKeyRotator } from "./utils/keyRotator.js";
@@ -140,6 +141,7 @@ async function boot() {
   try {
     initKeyRotator();
     await initEmbeddingModel();
+    await initRuleRegistry();  // Pre-embed planner rules (depends on embedding model)
     // Initialize Socket.io on the HTTP server
     const io = initSocketServer(httpServer);
     httpServer.listen(PORT, () => {
@@ -152,6 +154,7 @@ async function boot() {
       console.log(`\n   🎯 Planner:    llama-3.1-8b-instant`);
       console.log(`   🔬 Worker:     ${process.env.WORKER_URL}`);
       console.log(`   🔤 Embedding:  Xenova/all-MiniLM-L6-v2 (384-dim)`);
+      console.log(`   📋 Rules:      Dynamic RAG (In-Memory Semantic Registry)`);
       console.log(`   🔒 Auth:       Supabase JWT + Google refresh_token`);
       console.log(`   🌐 Socket.io:  WebSocket + polling fallback`);
       console.log(`   ⏰ Scheduler:  Background task runner (60s interval)\n`);
